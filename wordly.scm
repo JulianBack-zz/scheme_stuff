@@ -126,6 +126,9 @@
       (write-string "Enter your word:")
       (set! guess (read-line))
       (cond
+       ((string=? "?" guess)
+	(write-line word)
+	(next-guess))
        ((not (= word-length (string-length guess)))
         (write-line "Please enter a 5 letter word")
         (next-guess))
