@@ -8,48 +8,8 @@
 (import (chicken io))
 (import (chicken random))
 
-;;; System dictionary location
-(define dict-file "/usr/share/dict/words")
-
-;;; The length of words we are using.
-(define word-length 5)
-
-;;; Does a word contain only the valid characters?
-(define (valid-chars? word)
-  (letrec 
-      ((validate (lambda (cl)
-                   (cond
-                    ((null? cl) #t)
-                    ((char-lower-case? (car cl)) (validate (cdr cl)))
-                    (else #f)))))
-  (validate (string->list word))))
-
-;;; Is a word singular (as far as we can tell).  We assume that words
-;;; ending in s are plural except for those ending with a double s.
-(define (singular? word)
-  (let ((len (string-length word)))
-    (not (and (char=? #\s (string-ref word (- len 1)))
-         (not (char=? #\s (string-ref word (- len 2))))))))
-
-;;; Is a word valid?
-(define (valid-word? word)
-  (cond
-   ((and (= word-length (string-length word)) (valid-chars? word) (singular? word)) #t)
-   (else #f)))
-
-;;; Read the file and return the valid words
-(define (read-words filename)
-  (letrec
-      ((input (open-input-file filename))
-       (next-word (lambda (words)
-                    (let ((line (read-line input)))
-                      (cond
-                       ((eof-object? line) words)
-                       ((valid-word? line) (next-word (cons line words)))
-                       (else (next-word words)))))))
-    (let ((word-list (next-word '())))
-      (close-input-port input)
-      word-list)))
+;;; Load the dictionary
+(load "words.scm")
 
 ;;; Return a random word from a list of words
 (define (random-word dict)
@@ -65,15 +25,14 @@
 ;;; Play a wordle game
 (define (guess-word)
   (let*
-      ((dict (read-words dict-file))
-       (word (random-word dict))
+      ((word (random-word words))
        (word-letters (string->list word))
        (guess "     ")
        (guess-state (make-vector word-length 'unused))
        (letters "abcdefghijklmnopqrstuvwxyz")
        (letter-state (make-vector 26 'unused)))
     (define (in-dict? word)
-      (list? (member word dict)))
+      (list? (member word words)))
     (define (set-letter-state c state)
       (if (char-lower-case? c)
           (vector-set! letter-state (- (char->integer c) (char->integer #\a)) state)))
