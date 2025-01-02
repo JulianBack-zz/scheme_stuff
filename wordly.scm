@@ -16,7 +16,7 @@
   (let ((words (list->vector dict)))
     (vector-ref words (pseudo-random-integer (vector-length words)))))
 
-;;; Remove the first matching character from a list of character
+;;; Remove the first matching character from a list of characters
 (define (rem-char-1 l c)
   (if (char=? (car l) c)
       (cdr l)
@@ -35,7 +35,9 @@
       (list? (member word words)))
     (define (set-letter-state c state)
       (if (char-lower-case? c)
-          (vector-set! letter-state (- (char->integer c) (char->integer #\a)) state)))
+          (let ((i (- (char->integer c) (char->integer #\a))))
+            (if (eqv? (vector-ref letter-state i) 'unused)
+                (vector-set! letter-state i state)))))
     (define (update-state)
       (let ((letters-left word-letters))
         ;; Clear down the letter states for this guess
