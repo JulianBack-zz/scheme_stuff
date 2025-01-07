@@ -1,5 +1,13 @@
 (import (chicken port))
 
+;;; Reserved words
+(define reserved-words
+  '(("integer" INTEGER)
+    ("var" VAR)
+    ("begin" BEGIN)
+    ("end" END)
+    ("function" FUNCTION)))
+
 ;;; Read a token from input and return it
 (define (get-token)
   (let loop ((c (peek-char)))
@@ -14,6 +22,9 @@
      ((char=? c #\/) (read-char) '(DIVIDE))
      ((char=? c #\*) (read-char) '(MULTIPLY))
      ((char=? c #\=) (read-char) '(EQUAL))
+     ((char=? c #\() (read-char) '(OPEN))
+     ((char=? c #\)) (read-char) '(CLOSE))
+     ((char=? c #\,) (read-char) '(COMMA))
      ((char=? c #\:) (read-char)
       (if (char=? #\= (peek-char))
           (begin (read-char) '(ASSIGN))
@@ -27,7 +38,11 @@
       (read-char)
       (loop (peek-char) (cons c identifier)))
      (else
-      (list 'IDENTIFIER (list->string (reverse identifier)))))))
+      (let* ((id (list->string (reverse identifier)))
+             (rw (assoc id reserved-words)))
+        (if rw
+            (cdr rw)
+            (list 'IDENTIFIER id)))))))
 
 (define (get-number)
   (let loop ((c (peek-char)) (number '()))
@@ -55,6 +70,8 @@
           (write-line " FAIL")
           (write result)))))
 
-(test-get-tokens "var x:integer; x := 42+ alpha ;"
-                 '((IDENTIFIER "var") (IDENTIFIER "x") (COLON) (IDENTIFIER "integer") (SEMICOLON)
-                   (IDENTIFIER "x") (ASSIGN) (NUMBER 42) (PLUS) (IDENTIFIER "alpha") (SEMICOLON)))
+(test-get-tokens "function test(alpha, beta);var x:integer; begin x := 42+ alpha ; end;"
+                 '((FUNCTION) (IDENTIFIER "test") (OPEN) (IDENTIFIER "alpha") (COMMA) (IDENTIFIER "beta") (CLOSE) (SEMICOLON)
+                   (VAR) (IDENTIFIER "x") (COLON) (INTEGER) (SEMICOLON)
+                   (BEGIN) (IDENTIFIER "x") (ASSIGN) (NUMBER 42) (PLUS) (IDENTIFIER "alpha") (SEMICOLON)
+                   (END) (SEMICOLON)))
