@@ -14,6 +14,10 @@
      ((char=? c #\/) (read-char) '(DIVIDE))
      ((char=? c #\*) (read-char) '(MULTIPLY))
      ((char=? c #\=) (read-char) '(EQUAL))
+     ((char=? c #\:) (read-char)
+      (if (char=? #\= (peek-char))
+          (begin (read-char) '(ASSIGN))
+          '(COLON)))
      (else (read-char) (cons 'ERROR c)))))
 
 (define (read-identifier)
@@ -36,17 +40,11 @@
 
 ;; Example usage:
 (define (test)
-  (begin
-    (print (read-token))
-    (print (read-token))
-    (print (read-token))
-    (print (read-token))
-    (print (read-token))
-    (print (read-token))
-    (print (read-token))
-    (print (read-token))
-    (print (read-token))))
+  (let ((t (read-token)))
+    (if (not (eof-object? t))
+        (begin
+          (print t)
+          (test)))))
 
-
-(with-input-from-string "var x = 42+ alpha ;" test)
+(with-input-from-string "var x:integer; x := 42+ alpha ;" test)
 
