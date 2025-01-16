@@ -110,4 +110,5 @@
         (next-guess))))
     (next-guess)))
 
+(set! *random-state* (random-state-from-platform))
 (guess-word)
