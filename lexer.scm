@@ -15,7 +15,7 @@
 (define (get-token-from-input)
   (let loop ((c (peek-char)))
     (cond
-     ((eof-object? c) c)
+     ((eof-object? c) '(EOF))
      ((char-whitespace? c) (read-char) (loop (peek-char)))
      ((char-alphabetic? c) (get-identifier))
      ((char-numeric? c) (get-number))
@@ -37,7 +37,7 @@
 (define (get-identifier)
   (let loop ((c (peek-char)) (identifier '()))
     (cond
-     ((or (char-alphabetic? c) (char-numeric? c))
+     ((and (char? c) (or (char-alphabetic? c) (char-numeric? c)))
       (read-char)
       (loop (peek-char) (cons c identifier)))
      (else
@@ -50,7 +50,7 @@
 (define (get-number)
   (let loop ((c (peek-char)) (number '()))
     (cond
-     ((char-numeric? c)
+     ((and (char? c) (char-numeric? c))
       (read-char)
       (loop (peek-char) (cons c number)))
      (else
@@ -71,11 +71,12 @@
 
 (define (get-tokens)
   (let loop ((t (get-token)) (tokens '()))
-    (if (eof-object? t)
+    (if (eq? 'EOF (car t))
         (reverse tokens)
         (loop (get-token) (cons t tokens)))))
   
 (define (test-get-tokens input expected-result)
+  (init-tokeniser)
   (let ((result (with-input-from-string input get-tokens)))
     (if (equal? result expected-result)
         (begin
