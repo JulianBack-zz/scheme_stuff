@@ -80,3 +80,98 @@ RepeatStatement = REPEAT StatementSequence UNTIL expression.
 ForStatement = FOR ident ":=" expression TO expression [BY ConstExpression]
     DO StatementSequence END.
     
+Simple Expression Syntax for Testing
+
+expression = term {("+" | "-") term}.
+term = factor {("*" | "/") factor}.
+factor = id | "(" expression ")" .
+
+Oberon-0 - A Simplified Language
+
+ident = letter {letter | digit}.
+integer = digit {digit}.
+
+selector = {"." ident | "[" expression "]"}.
+number = integer.
+factor = ident selector | number | "(" expression ")" | "~" factor.
+term = factor {("*" | "DIV" | "MOD" | "&") factor}.
+SimpleExpression = ["+"|"-"] term {("+"|"-" | "OR") term}.
+expression = SimpleExpression
+ [("=" | "#" | "<" | "<=" | ">" | ">=") SimpleExpression].
+assignment = ident selector ":=" expression.
+ActualParameters = "(" [expression {"," expression}] ")" .
+ProcedureCall = ident selector [ActualParameters].
+IfStatement = "IF" expression "THEN" StatementSequence
+ {"ELSIF" expression "THEN" StatementSequence}
+ ["ELSE" StatementSequence] "END".
+WhileStatement = "WHILE" expression "DO" StatementSequence "END".
+RepeatStatement = “REPEAT” Statement Sequence “UNTIL” expression.
+statement = [assignment | ProcedureCall | IfStatement | WhileStatement].
+StatementSequence = statement {";" statement}. 
+31
+IdentList = ident {"," ident}.
+ArrayType = "ARRAY" expression "OF" type.
+FieldList = [IdentList ":" type].
+RecordType = "RECORD" FieldList {";" FieldList} "END".
+type = ident | ArrayType | RecordType.
+FPSection = ["VAR"] IdentList ":" type.
+FormalParameters = "(" [FPSection {";" FPSection}] ")".
+ProcedureHeading = "PROCEDURE" ident [FormalParameters].
+ProcedureBody = declarations ["BEGIN" StatementSequence] "END" ident.
+ProcedureDeclaration = ProcedureHeading ";" ProcedureBody.
+declarations = ["CONST" {ident "=" expression ";"}]
+ ["TYPE" {ident "=" type ";"}]
+ ["VAR" {IdentList ":" type ";"}]
+ {ProcedureDeclaration ";"}.
+module = "MODULE" ident ";" declarations
+ ["BEGIN" StatementSequence] "END" ident "." . 
+
+Some possible changes to Oberon-07:
+
+1. Change reserved words to lower case, upper case is ugly.
+
+2. Add sum types.
+
+Possible syntax:
+
+sumtype Maybe =
+    some: thing
+  | none
+end;
+
+3. Add generics:
+
+Possible syntax:
+
+sumtype Maybe of T =
+    some: T
+  | none
+end;
+
+record Point of T =
+    x: T;
+    y: T
+end;
+
+var
+   a: Maybe of Node;
+   b: Point of integer;
+
+procedure of T distance(a: Point of T; b: Point of T): T;
+
+or
+
+procedure distance(a: Point of T; b: Point of T): T of T;
+begin
+   return sqrt(sqr(a.x - b.x) + sqr(a.y - b.y))
+end
+
+4. Remove NIL.
+
+5. Remove type extension/inheritance.
+
+6. Support initialisation of variables when they are declared?
+
+7. Might be getting too much like SML!
+
+8. Some kind of interfaces?
