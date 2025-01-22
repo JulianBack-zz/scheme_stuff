@@ -14,7 +14,7 @@
   (newline))
 
 ;; primary = ID | INTEGER
-(define (match-primary token)
+(define (match-primary lexer token)
   (parse-trace "match-primary " token) 
   (let ((token-type (car token)))
     (cond
@@ -23,24 +23,23 @@
      (else (parse-error "Expected ID or INTEGER")))))
 
 ;; unary = primary | MINUS primary
-(define (match-unary token)
+(define (match-unary lexer token)
   (parse-trace "match-unary " token) 
   (let ((token-type (car token)))
     (cond
      ((eq? 'MINUS token-type)
-      (let ((p (match-primary (get-token))))
+      (let ((p (match-primary lexer (get-token lexer))))
         (if p (list token-type p)
             #f)))
-     (else (match-primary token)))))
+     (else (match-primary lexer token)))))
 
 (define (test-match-unary)
-  (define (parse-unary)
-    (match-unary (get-token)))
+  (define (parse-unary lexer)
+    (match-unary lexer (get-token lexer)))
   (define (test str)
     (display str)
     (newline)
-    (init-tokeniser)
-    (display (with-input-from-string str parse-unary))
+    (display (parse-unary (make-lexer-from-string str)))
     (newline))
   (test "2")
   (test "1232")
@@ -49,32 +48,31 @@
   (test "-b"))
 
 ;; factor = unary | unary (MUL|DIV) factor
-(define (match-factor token)
+(define (match-factor lexer token)
   (parse-trace "match-factor " token) 
-  (let ((u (match-unary token)))
+  (let ((u (match-unary lexer token)))
     (if u
-        (let* ((op-token (get-token))
+        (let* ((op-token (get-token lexer))
                (token-type (car op-token)))
           (cond
            ((or (eq? 'MUL token-type)
                 (eq? 'DIV token-type))
-            (let ((f (match-factor (get-token))))
+            (let ((f (match-factor lexer (get-token lexer))))
               (if f
                   (list token-type u f)
                   (parse-error "Missing factor after * or /"))))
            (else
-            (unget-token op-token)
+            (unget-token lexer op-token)
             u)))
         #f)))
 
 (define (test-match-factor)
-  (define (parse-factor)
-    (match-factor (get-token)))
+  (define (parse-factor lexer)
+    (match-factor lexer (get-token lexer)))
   (define (test str)
     (display str)
     (newline)
-    (init-tokeniser)
-    (display (with-input-from-string str parse-factor))
+    (display (parse-factor (make-lexer-from-string str)))
     (newline))
   (test "a * -2")
   (test "a * 2")

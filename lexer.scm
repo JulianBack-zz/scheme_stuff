@@ -1,7 +1,18 @@
 (import (chicken io))
 (import (chicken port))
 
-(define *saved-tokens* '())
+(define-record-type lexer
+  (make-lexer port saved-tokens line-number)
+  lexer?
+  (port lexer-get-port)
+  (saved-tokens lexer-get-saved-tokens lexer-set-saved-tokens!)
+  (line-number lexer-get-line-number lexer-set-line-number!))
+
+(define (make-lexer-from-string str)
+  (make-lexer (open-input-string str) '() 1))
+
+(define (make-lexer-from-file file)
+  (make-lexer (open-input-file file) '() 1))
 
 ;;; Reserved words
 (define reserved-words
@@ -11,35 +22,36 @@
     ("end" END)
     ("function" FUNCTION)))
 
-;;; Read a token from input and return it
-(define (get-token-from-input)
-  (let loop ((c (peek-char)))
-    (cond
-     ((eof-object? c) '(EOF))
-     ((char-whitespace? c) (read-char) (loop (peek-char)))
-     ((char-alphabetic? c) (get-identifier))
-     ((char-numeric? c) (get-number))
-     ((char=? c #\;) (read-char) '(SEMICOLON))
-     ((char=? c #\+) (read-char) '(PLUS))
-     ((char=? c #\-) (read-char) '(MINUS))
-     ((char=? c #\/) (read-char) '(DIV))
-     ((char=? c #\*) (read-char) '(MUL))
-     ((char=? c #\=) (read-char) '(EQUAL))
-     ((char=? c #\() (read-char) '(OPEN))
-     ((char=? c #\)) (read-char) '(CLOSE))
-     ((char=? c #\,) (read-char) '(COMMA))
-     ((char=? c #\:) (read-char)
-      (if (char=? #\= (peek-char))
-          (begin (read-char) '(ASSIGN))
-          '(COLON)))
-     (else (read-char) (cons 'ERROR c)))))
+;;; Read a token from port and return it
+(define (get-token-from-port lexer)
+  (let ((port (lexer-get-port lexer)))
+    (let loop ((c (peek-char port)))
+      (cond
+       ((eof-object? c) '(EOF))
+       ((char-whitespace? c) (read-char port) (loop (peek-char port)))
+       ((char-alphabetic? c) (get-identifier port))
+       ((char-numeric? c) (get-number port))
+       ((char=? c #\;) (read-char port) '(SEMICOLON))
+       ((char=? c #\+) (read-char port) '(PLUS))
+       ((char=? c #\-) (read-char port) '(MINUS))
+       ((char=? c #\/) (read-char port) '(DIV))
+       ((char=? c #\*) (read-char port) '(MUL))
+       ((char=? c #\=) (read-char port) '(EQUAL))
+       ((char=? c #\() (read-char port) '(OPEN))
+       ((char=? c #\)) (read-char port) '(CLOSE))
+       ((char=? c #\,) (read-char port) '(COMMA))
+       ((char=? c #\:) (read-char port)
+        (if (char=? #\= (peek-char port))
+            (begin (read-char port) '(ASSIGN))
+            '(COLON)))
+       (else (read-char port) (cons 'ERROR c))))))
 
-(define (get-identifier)
-  (let loop ((c (peek-char)) (identifier '()))
+(define (get-identifier port)
+  (let loop ((c (peek-char port)) (identifier '()))
     (cond
      ((and (char? c) (or (char-alphabetic? c) (char-numeric? c)))
-      (read-char)
-      (loop (peek-char) (cons c identifier)))
+      (read-char port)
+      (loop (peek-char port) (cons c identifier)))
      (else
       (let* ((id (list->string (reverse identifier)))
              (rw (assoc id reserved-words)))
@@ -47,37 +59,33 @@
             (cdr rw)
             (list 'ID id)))))))
 
-(define (get-number)
-  (let loop ((c (peek-char)) (number '()))
+(define (get-number port)
+  (let loop ((c (peek-char port)) (number '()))
     (cond
      ((and (char? c) (char-numeric? c))
-      (read-char)
-      (loop (peek-char) (cons c number)))
+      (read-char port)
+      (loop (peek-char port) (cons c number)))
      (else
       (list 'INT (string->number (list->string (reverse number))))))))
 
-(define (init-tokeniser)
-  (set! *saved-tokens* '()))
+(define (get-token lexer)
+  (if (null? (lexer-get-saved-tokens lexer))
+      (get-token-from-port lexer)
+      (let ((t (lexer-get-saved-tokens lexer)))
+        (lexer-set-saved-tokens! lexer (cdr t))
+        (car t))))
 
-(define (get-token)
-  (if (null? *saved-tokens*)
-      (get-token-from-input)
-      (let ((t (car *saved-tokens*)))
-        (set! *saved-tokens* (cdr *saved-tokens*))
-        t)))
+(define (unget-token lexer t)
+  (lexer-set-saved-tokens! lexer (cons t (lexer-get-saved-tokens lexer))))
 
-(define (unget-token t)
-  (set! *saved-tokens* (cons t *saved-tokens*)))
-
-(define (get-tokens)
-  (let loop ((t (get-token)) (tokens '()))
+(define (get-tokens lexer)
+  (let loop ((t (get-token lexer)) (tokens '()))
     (if (eq? 'EOF (car t))
         (reverse tokens)
-        (loop (get-token) (cons t tokens)))))
+        (loop (get-token lexer) (cons t tokens)))))
   
 (define (test-get-tokens input expected-result)
-  (init-tokeniser)
-  (let ((result (with-input-from-string input get-tokens)))
+  (let ((result (get-tokens (make-lexer-from-string input))))
     (if (equal? result expected-result)
         (begin
           (write-string input)
