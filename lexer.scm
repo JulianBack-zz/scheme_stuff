@@ -70,12 +70,17 @@
      (else
       (list 'INT (string->number (list->string (reverse number))))))))
 
+(define *token-trace* #f)
+
 (define (get-token lexer)
-  (if (null? (lexer-get-saved-tokens lexer))
-      (get-token-from-port lexer)
-      (let ((t (lexer-get-saved-tokens lexer)))
-        (lexer-set-saved-tokens! lexer (cdr t))
-        (car t))))
+  (let ((token (if (null? (lexer-get-saved-tokens lexer))
+                   (get-token-from-port lexer)
+                   (let ((t (lexer-get-saved-tokens lexer)))
+                     (lexer-set-saved-tokens! lexer (cdr t))
+                     (car t)))))
+    (if *token-trace*
+        (display token))
+    token))
 
 (define (unget-token lexer t)
   (lexer-set-saved-tokens! lexer (cons t (lexer-get-saved-tokens lexer))))
