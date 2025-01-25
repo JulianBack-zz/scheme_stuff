@@ -6,7 +6,10 @@
 ;;; 2. Use hash table for reserved words
 ;;; 3. Store filename in lexer record
 ;;; 4. Add additional tokens
-;;; 5. Comments
+;;; 5. Comments, including nested
+;;; 6. Strings and characters including hex and escapes
+;;; 7. Hex integers
+;;; 8. Floating point constants
 
 (import (chicken io))
 (import (chicken port))
