@@ -21,6 +21,9 @@
   (saved-tokens lexer-get-saved-tokens lexer-set-saved-tokens!)
   (line-number lexer-get-line-number lexer-set-line-number!))
 
+(define (inc-line-number lexer)
+  (lexer-set-line-number! lexer (+ 1 (lexer-get-line-number lexer))))
+
 (define (make-lexer-from-string str)
   (make-lexer (open-input-string str) '() 1))
 
@@ -43,6 +46,8 @@
         (let loop ((c (peek-char port)))
           (cond
            ((eof-object? c) (close-input-port port) '(EOF))
+           ((char=? c #\newline) (inc-line-number lexer)
+	    (read-char port) (loop (peek-char port)))
            ((char-whitespace? c) (read-char port) (loop (peek-char port)))
            ((char-alphabetic? c) (get-identifier port))
            ((char-numeric? c) (get-number port))
@@ -105,18 +110,22 @@
         (loop (get-token lexer) (cons t tokens)))))
   
 (define (test-get-tokens input expected-result)
-  (let ((result (get-tokens (make-lexer-from-string input))))
+  (let* ((lexer (make-lexer-from-string input))
+	 (result (get-tokens lexer)))
     (if (equal? result expected-result)
         (begin
           (write-string input)
-          (write-line " OK"))
+          (write-line " OK")
+	  (write-string "Lines: ")
+	  (display (lexer-get-line-number lexer))
+	  (newline))
         (begin
           (write-string input)
           (write-line " FAIL")
           (write result)))))
 
 (define (test-lexer)
-  (test-get-tokens "function test(alpha, beta);var x:integer; begin x := 42+ alpha ; end;"
+  (test-get-tokens "function test(alpha, beta);\nvar x:integer;\nbegin\n x := 42+ alpha ;\nend;\n"
                    '((FUNCTION) (ID "test") (OPEN) (ID "alpha") (COMMA) (ID "beta") (CLOSE) (SEMICOLON)
                      (VAR) (ID "x") (COLON) (INTEGER) (SEMICOLON)
                      (BEGIN) (ID "x") (ASSIGN) (INT 42) (PLUS) (ID "alpha") (SEMICOLON)
