@@ -1,3 +1,13 @@
+;;; Simple Lexer for an Oberon-style language
+;;;
+;;; TODO
+;;;
+;;; 1. Support line numbering
+;;; 2. Use hash table for reserved words
+;;; 3. Store filename in lexer record
+;;; 4. Add additional tokens
+;;; 5. Comments
+
 (import (chicken io))
 (import (chicken port))
 

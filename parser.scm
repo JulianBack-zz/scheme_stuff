@@ -1,8 +1,26 @@
-;; This doesn't work!
-;; (define primary '((ID) (INTEGER)))
-;; (define unary '((primary) (MINUS primary)))
-;; (define factor '(unary (MUL DIV) factor))
-;; (define term '((factor (PLUS MINUS) term) (OPEN term CLOSE)))
+;;; Simple recursive descent parser
+;;;
+;;; Rules for parsing functions
+;;;
+;;; 1. Each function takes the lexer and the current token as parameter
+;;;
+;;; 2. If successful the function returns the parse tree and consumes all the parsed tokens
+;;;
+;;; 3. It returns #f if unsuccessful.  It may have output an error message.  It does not consume
+;;;    the failing token. (?)
+;;;
+;;; Next steps:
+;;;
+;;; 1. Add more operators: DIV, MOD, &, ~, OR
+;;; 2. Relational operators: =, #, <, >, <=, >, >=
+;;; 3. Add selectors: . notation for records, [] for arrays
+;;; 4. Add function calls
+;;; 5. Add statements: assignment, IF, WHILE, REPEAT, procedure call
+;;; 6. Add variable declarations
+;;; 7. Add procedure declarations
+;;; 8. Add type declaractions
+;;; 9. Add Module statement
+
 
 (define (parse-error msg)
   (display msg)
