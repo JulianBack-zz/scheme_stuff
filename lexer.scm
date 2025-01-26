@@ -30,6 +30,13 @@
 (define (make-lexer-from-file file)
   (make-lexer (open-input-file file) '() 1))
 
+(define-record-type token
+  (make-token type value line-number)
+  token?
+  (type token-get-type)
+  (value token-get-value)
+  (line-number token-get-line-number))
+
 ;;; Reserved words
 (define reserved-words
   '(("integer" INTEGER)
@@ -47,7 +54,7 @@
           (cond
            ((eof-object? c) (close-input-port port) '(EOF))
            ((char=? c #\newline) (inc-line-number lexer)
-	    (read-char port) (loop (peek-char port)))
+	        (read-char port) (loop (peek-char port)))
            ((char-whitespace? c) (read-char port) (loop (peek-char port)))
            ((char-alphabetic? c) (get-identifier port))
            ((char-numeric? c) (get-number port))
