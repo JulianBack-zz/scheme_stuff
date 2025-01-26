@@ -2,9 +2,9 @@
 ;;;
 ;;; TODO
 ;;;
-;;; 1. Support line numbering
-;;; 2. Use hash table for reserved words
-;;; 3. Store filename in lexer record
+;;; 1. DONE Support line numbering
+;;; 2. DONE Use hash table for reserved words
+;;; 3. DONE Store filename in lexer record
 ;;; 4. Add additional tokens
 ;;; 5. Comments, including nested
 ;;; 6. Strings and characters including hex and escapes
@@ -13,37 +13,32 @@
 
 (import (chicken io))
 (import (chicken port))
+(import srfi-69)
 
 (define-record-type lexer
-  (make-lexer port saved-tokens line-number)
+  (make-lexer port saved-tokens line-number filename)
   lexer?
   (port lexer-get-port)
   (saved-tokens lexer-get-saved-tokens lexer-set-saved-tokens!)
-  (line-number lexer-get-line-number lexer-set-line-number!))
+  (line-number lexer-get-line-number lexer-set-line-number!)
+  (filename lexer-get-filename))
 
 (define (inc-line-number lexer)
   (lexer-set-line-number! lexer (+ 1 (lexer-get-line-number lexer))))
 
 (define (make-lexer-from-string str)
-  (make-lexer (open-input-string str) '() 1))
+  (make-lexer (open-input-string str) '() 1 "(from string)"))
 
-(define (make-lexer-from-file file)
-  (make-lexer (open-input-file file) '() 1))
-
-(define-record-type token
-  (make-token type value line-number)
-  token?
-  (type token-get-type)
-  (value token-get-value)
-  (line-number token-get-line-number))
+(define (make-lexer-from-file filename)
+  (make-lexer (open-input-file filename) '() 1 filename))
 
 ;;; Reserved words
-(define reserved-words
-  '(("integer" INTEGER)
-    ("var" VAR)
-    ("begin" BEGIN)
-    ("end" END)
-    ("function" FUNCTION)))
+(define *reserved-words*
+  (alist->hash-table '(("integer" INTEGER)
+                       ("var" VAR)
+                       ("begin" BEGIN)
+                       ("end" END)
+                       ("function" FUNCTION))))
 
 ;;; Read a token from port and return it
 (define (get-token-from-port lexer)
@@ -81,9 +76,9 @@
       (loop (peek-char port) (cons c identifier)))
      (else
       (let* ((id (list->string (reverse identifier)))
-             (rw (assoc id reserved-words)))
+             (rw (hash-table-ref/default *reserved-words* id #f)))
         (if rw
-            (cdr rw)
+            rw
             (list 'ID id)))))))
 
 (define (get-number port)
@@ -99,7 +94,8 @@
 
 (define (get-token lexer)
   (let ((token (if (null? (lexer-get-saved-tokens lexer))
-                   (get-token-from-port lexer)
+                   (let ((t (get-token-from-port lexer)))
+                     (append t (list (lexer-get-line-number lexer))))
                    (let ((t (lexer-get-saved-tokens lexer)))
                      (lexer-set-saved-tokens! lexer (cdr t))
                      (car t)))))
@@ -129,11 +125,13 @@
         (begin
           (write-string input)
           (write-line " FAIL")
-          (write result)))))
+          (write result)
+          (newline)))))
 
 (define (test-lexer)
   (test-get-tokens "function test(alpha, beta);\nvar x:integer;\nbegin\n x := 42+ alpha ;\nend;\n"
-                   '((FUNCTION) (ID "test") (OPEN) (ID "alpha") (COMMA) (ID "beta") (CLOSE) (SEMICOLON)
-                     (VAR) (ID "x") (COLON) (INTEGER) (SEMICOLON)
-                     (BEGIN) (ID "x") (ASSIGN) (INT 42) (PLUS) (ID "alpha") (SEMICOLON)
-                     (END) (SEMICOLON))))
+                   '((FUNCTION 1) (ID "test" 1) (OPEN 1) (ID "alpha" 1) (COMMA 1) (ID "beta" 1) (CLOSE 1) (SEMICOLON 1)
+                     (VAR 2) (ID "x" 2) (COLON 2) (INTEGER 2) (SEMICOLON 2)
+                     (BEGIN 3)
+                     (ID "x" 4) (ASSIGN 4) (INT 42 4) (PLUS 4) (ID "alpha" 4) (SEMICOLON 4)
+                     (END 5) (SEMICOLON 5))))
