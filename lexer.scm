@@ -7,8 +7,8 @@
 ;;; 3. DONE Store filename in lexer record
 ;;; 4. DONE Add additional tokens
 ;;; 5. DONE Comments, including nested
-;;; 6. Strings and characters including hex and escapes
-;;; 7. Hex integers
+;;; 6. DONE Strings and characters
+;;; 7. DONE Hex integers and characters
 ;;; 8. Floating point constants
 
 (import (chicken io))
@@ -34,8 +34,7 @@
 
 ;;; Reserved words
 (define *reserved-words*
-  (alist->hash-table '(("integer" INTEGER)
-                       ("var" VAR)
+  (alist->hash-table '(("var" VAR)
                        ("begin" BEGIN)
                        ("end" END)
                        ("procedure" PROCEDURE)
@@ -55,7 +54,9 @@
                        ("record" RECORD)
                        ("const" CONST)
                        ("type" TYPE)
-                       ("module" MODULE))))
+                       ("module" MODULE)
+                       ("return" RETURN)
+                       ("import" IMPORT))))
 
 ;;; Read a token from port and return it
 (define (get-token-from-port lexer)
@@ -81,6 +82,7 @@
            ((char=? c #\&) (read-char port) '(AND))
            ((char=? c #\#) (read-char port) '(NE))
            ((char=? c #\~) (read-char port) '(NOT))
+           ((char=? c #\") (read-char port) (get-string port))
            ((char=? c #\() (read-char port)
             (if (char=? #\* (peek-char port))
                 (begin
@@ -116,14 +118,36 @@
             rw
             (list 'ID id)))))))
 
+;;; TODO - needs error protection on string->number etc.
 (define (get-number port)
   (let loop ((c (peek-char port)) (number '()))
     (cond
      ((and (char? c) (char-numeric? c))
       (read-char port)
       (loop (peek-char port) (cons c number)))
+     ((and (char? c) (char-alphabetic? c))
+      (read-char port)
+      (loop (peek-char port) (cons c number)))
      (else
-      (list 'INT (string->number (list->string (reverse number))))))))
+      (cond
+       ((char-ci=? #\H (car number))
+        (list 'INT (string->number (list->string (reverse (cdr number))) 16)))
+       ((char-ci=? #\X (car number))
+        (list 'CHAR (integer->char (string->number (list->string (reverse (cdr number))) 16))))
+       (else
+        (list 'INT (string->number (list->string (reverse number))))))))))
+
+; Get a string, does not allow and escapes or newlines
+(define (get-string port)
+  (let loop ((c (read-char port)) (string '()))
+    (if (char? c)
+        (cond
+         ((char=? c #\")
+          (list 'STRING (list->string (reverse string))))
+         ((char=? c #\newline)
+          (list 'ERROR "Newline in string"))
+         (else
+          (loop (read-char port) (cons c string)))))))
 
 ; Returns EOF object if end of file hit
 (define (skip-comment lexer)
@@ -186,9 +210,11 @@
           (newline)))))
 
 (define (test-lexer)
-  (test-get-tokens "procedure test(alpha, beta); (* test function *)\nvar x:integer;\nbegin\n x := 42+ alpha ; (* A (* nested *) comment *)\nend;\n"
+  (test-get-tokens "procedure test(alpha, beta); (* test function *)\nvar x:integer, y:string, z:char;\nbegin\n x := 42+ alpha ; (* A (* nested *) comment *)\n y := \"Hello, World!\";\n z := 041X;\nend;\n"
                    '((PROCEDURE 1) (ID "test" 1) (OPEN 1) (ID "alpha" 1) (COMMA 1) (ID "beta" 1) (CLOSE 1) (SEMICOLON 1)
-                     (VAR 2) (ID "x" 2) (COLON 2) (INTEGER 2) (SEMICOLON 2)
+                     (VAR 2) (ID "x" 2) (COLON 2) (ID "integer" 2) (COMMA 2) (ID "y" 2) (COLON 2) (ID "string" 2) (COMMA 2) (ID "z" 2) (COLON 2) (ID "char" 2) (SEMICOLON 2)
                      (BEGIN 3)
                      (ID "x" 4) (ASSIGN 4) (INT 42 4) (PLUS 4) (ID "alpha" 4) (SEMICOLON 4)
-                     (END 5) (SEMICOLON 5))))
+                     (ID "y" 5) (ASSIGN 5) (STRING "Hello, World!" 5) (SEMICOLON 5)
+                     (ID "z" 6) (ASSIGN 6) (CHAR #\A 6) (SEMICOLON 6)
+                     (END 7) (SEMICOLON 7))))
