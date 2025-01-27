@@ -76,7 +76,7 @@
            ((char=? c #\-) (read-char port) '(MINUS))
            ((char=? c #\/) (read-char port) '(DIV))
            ((char=? c #\*) (read-char port) '(MUL))
-           ((char=? c #\=) (read-char port) '(EQUAL))
+           ((char=? c #\=) (read-char port) '(EQ))
            ((char=? c #\)) (read-char port) '(CLOSE))
            ((char=? c #\,) (read-char port) '(COMMA))
            ((char=? c #\&) (read-char port) '(AND))
