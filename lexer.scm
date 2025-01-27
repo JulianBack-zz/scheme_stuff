@@ -88,7 +88,7 @@
                 (begin
                   (read-char port)
                   (if (eof-object? (skip-comment lexer))
-                      (cons 'ERROR "EOF in comment")
+                      '(ERROR "EOF in comment")
                       (loop (peek-char port))))
                 '(OPEN)))
            ((char=? c #\:) (read-char port)
@@ -135,7 +135,7 @@
                      (list 'CHAR (integer->char (string->number (list->string (reverse (cdr number))) 16))))
                     (else
                      (list 'INT (string->number (list->string (reverse number))))))))
-        (if (cdr value)
+        (if (cadr value)
             value
             (list 'ERROR "Bad number")))))))
 
@@ -147,9 +147,10 @@
          ((char=? c #\")
           (list 'STRING (list->string (reverse string))))
          ((char=? c #\newline)
-          (list 'ERROR "Newline in string"))
+          '(ERROR "Newline in string"))
          (else
-          (loop (read-char port) (cons c string)))))))
+          (loop (read-char port) (cons c string))))
+        '(ERROR "EOF in string"))))
 
 ; Returns EOF object if end of file hit
 (define (skip-comment lexer)
@@ -189,34 +190,34 @@
 (define (unget-token lexer t)
   (lexer-set-saved-tokens! lexer (cons t (lexer-get-saved-tokens lexer))))
 
-(define (get-tokens lexer)
-  (let loop ((t (get-token lexer)) (tokens '()))
-    (if (eq? 'EOF (car t))
-        (reverse tokens)
-        (loop (get-token lexer) (cons t tokens)))))
-  
-(define (test-get-tokens input expected-result)
-  (let* ((lexer (make-lexer-from-string input))
-	 (result (get-tokens lexer)))
-    (if (equal? result expected-result)
-        (begin
-          (write-string input)
-          (write-line " OK")
-	  (write-string "Lines: ")
-	  (display (lexer-get-line-number lexer))
-	  (newline))
-        (begin
-          (write-string input)
-          (write-line " FAIL")
-          (write result)
-          (newline)))))
-
 (define (test-lexer)
-  (test-get-tokens "procedure test(alpha, beta); (* test function *)\nvar x:integer, y:string, z:char;\nbegin\n x := 42+ alpha ; (* A (* nested *) comment *)\n y := \"Hello, World!\";\n z := 041X;\nend;\n"
-                   '((PROCEDURE 1) (ID "test" 1) (OPEN 1) (ID "alpha" 1) (COMMA 1) (ID "beta" 1) (CLOSE 1) (SEMICOLON 1)
-                     (VAR 2) (ID "x" 2) (COLON 2) (ID "integer" 2) (COMMA 2) (ID "y" 2) (COLON 2) (ID "string" 2) (COMMA 2) (ID "z" 2) (COLON 2) (ID "char" 2) (SEMICOLON 2)
-                     (BEGIN 3)
-                     (ID "x" 4) (ASSIGN 4) (INT 42 4) (PLUS 4) (ID "alpha" 4) (SEMICOLON 4)
-                     (ID "y" 5) (ASSIGN 5) (STRING "Hello, World!" 5) (SEMICOLON 5)
-                     (ID "z" 6) (ASSIGN 6) (CHAR #\A 6) (SEMICOLON 6)
-                     (END 7) (SEMICOLON 7))))
+  (define (test input expected-result)
+    (define (get-tokens lexer)
+      (let loop ((t (get-token lexer)) (tokens '()))
+        (if (eq? 'EOF (car t))
+            (reverse tokens)
+            (loop (get-token lexer) (cons t tokens)))))
+    (let* ((lexer (make-lexer-from-string input))
+	       (result (get-tokens lexer)))
+      (if (equal? result expected-result)
+          (begin
+            (write-string input)
+            (write-line " OK")
+	        (newline))
+          (begin
+            (write-string input)
+            (write-line " FAIL")
+            (write result)
+            (newline)))))
+  (test "procedure test(alpha, beta); (* test function *)\nvar x:integer, y:string, z:char;\nbegin\n x := 42+ alpha ; (* A (* nested *) comment *)\n y := \"Hello, World!\";\n z := 041X;\nend;\n"
+        '((PROCEDURE 1) (ID "test" 1) (OPEN 1) (ID "alpha" 1) (COMMA 1) (ID "beta" 1) (CLOSE 1) (SEMICOLON 1)
+          (VAR 2) (ID "x" 2) (COLON 2) (ID "integer" 2) (COMMA 2) (ID "y" 2) (COLON 2) (ID "string" 2) (COMMA 2) (ID "z" 2) (COLON 2) (ID "char" 2) (SEMICOLON 2)
+          (BEGIN 3)
+          (ID "x" 4) (ASSIGN 4) (INT 42 4) (PLUS 4) (ID "alpha" 4) (SEMICOLON 4)
+          (ID "y" 5) (ASSIGN 5) (STRING "Hello, World!" 5) (SEMICOLON 5)
+          (ID "z" 6) (ASSIGN 6) (CHAR #\A 6) (SEMICOLON 6)
+          (END 7) (SEMICOLON 7)))
+  (test "0a12h" '((INT 2578 1)))
+  (test "123 (* unmatched comment" '((INT 123 1) (ERROR "EOF in comment" 1)))
+  (test "\"hello" '((ERROR "EOF in string" 1)))
+  (test "0g12h" '((ERROR "Bad number" 1))))
