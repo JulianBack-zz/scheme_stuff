@@ -118,7 +118,6 @@
             rw
             (list 'ID id)))))))
 
-;;; TODO - needs error protection on string->number etc.
 (define (get-number port)
   (let loop ((c (peek-char port)) (number '()))
     (cond
@@ -129,13 +128,16 @@
       (read-char port)
       (loop (peek-char port) (cons c number)))
      (else
-      (cond
-       ((char-ci=? #\H (car number))
-        (list 'INT (string->number (list->string (reverse (cdr number))) 16)))
-       ((char-ci=? #\X (car number))
-        (list 'CHAR (integer->char (string->number (list->string (reverse (cdr number))) 16))))
-       (else
-        (list 'INT (string->number (list->string (reverse number))))))))))
+      (let ((value (cond
+                    ((char-ci=? #\H (car number))
+                     (list 'INT (string->number (list->string (reverse (cdr number))) 16)))
+                    ((char-ci=? #\X (car number))
+                     (list 'CHAR (integer->char (string->number (list->string (reverse (cdr number))) 16))))
+                    (else
+                     (list 'INT (string->number (list->string (reverse number))))))))
+        (if (cdr value)
+            value
+            (list 'ERROR "Bad number")))))))
 
 ; Get a string, does not allow and escapes or newlines
 (define (get-string port)
