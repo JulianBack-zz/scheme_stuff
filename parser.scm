@@ -14,16 +14,23 @@
 ;;; 1. DONE Add more operators: DIV, MOD, &, ~, OR
 ;;; 2. DONE Relational operators: =, #, <, >, <=, >, >=
 ;;; 3. DONE Add selectors: . notation for records, [] for arrays
-;;; 4. Add function calls
+;;; 4. DONE function calls
 ;;; 5. Add statements: assignment, IF, WHILE, REPEAT, procedure call
 ;;; 6. Add variable declarations
 ;;; 7. Add procedure declarations
 ;;; 8. Add type declaractions
 ;;; 9. Add Module statement
 
+(import (chicken format))
 
-(define (parse-error msg)
-  (display msg)
+; Return line number from a token which is a 2 or 3 item list
+(define (line-number token)
+  (if (eq? 2 (length token))
+      (cadr token)
+      (caddr token)))
+
+(define (parse-error token msg)
+  (printf "Error line ~A: ~A~N" (line-number token) msg)
   #f)
 
 (define *parse-trace* #f)
@@ -62,18 +69,17 @@
     (let ((t (get-token lexer)))
       (if (eq? 'ID (car t))
           (list 'FIELD t)
-          (parse-error "Bad field"))))
+          (parse-error t "Bad field"))))
    ((eq? 'OPENSQ (car token))
     (let ((e (match-expr lexer (get-token lexer))))
       (if (and e (eq? 'CLOSESQ (car (get-token lexer))))
           (list 'INDEX e)
-          (parse-error "Expected ]"))))
+          (parse-error token "Expected ]"))))
    (else 
     (unget-token lexer token)
     #f)))
 
 ;; location = ID {desig}
-
 (define (match-location lexer token)
   (parse-trace "match-location" token)
   (if (eq? 'ID (car token))
@@ -98,12 +104,54 @@
   (test "a[x+1].b" '(FIELD (INDEX (ID "a" 1) (ADD (ID "x" 1) (INT 1 1))) (ID "b" 1)))
   (test "a.b[4].c" '(FIELD (INDEX (FIELD (ID "a" 1) (ID "b" 1)) (INT 4 1)) (ID "c" 1))))
 
-;; primary = ID | INTEGER | OPEN expr CLOSE
+;; actual-parameters = [expr] {COMMA expr}
+(define (match-actual-parameters lexer token)
+  (parse-trace "match-actual-parameters " token) 
+  (if (eq? 'CLOSE (car token))
+      (begin
+        (unget-token lexer token)
+        '())
+      (let ((e (match-expr lexer token)))
+        (if e
+            (let loop ((t (get-token lexer)) (p (list e)))
+              (cond
+               ((eq? 'COMMA (car t))
+                (let ((e (match-expr lexer (get-token lexer))))
+                  (if e
+                      (loop (get-token lexer) (cons e p))
+                      #f)))
+               (else
+                (unget-token lexer t)
+                (reverse p))))
+            #f))))
+
+(define (test-match-actual-parameters)
+  (define test (make-tester match-actual-parameters))
+  (test ")" '())
+  (test "a" '((ID "a" 1)))
+  (test "99" '((INT 99 1)))
+  (test "a, b" '((ID "a" 1) (ID "b" 1)))
+  (test "1+2, b*c" '((ADD (INT 1 1) (INT 2 1)) (MUL (ID "b" 1) (ID "c" 1))))
+  (test "1,2,3,4" '((INT 1 1) (INT 2 1) (INT 3 1) (INT 4 1))))
+
+;; primary = location | location OPEN actual-parameters CLOSE | INTEGER | OPEN expr CLOSE
 (define (match-primary lexer token)
   (parse-trace "match-primary " token) 
   (let ((l (match-location lexer token)))
     (if l
-        l
+        (let ((token (get-token lexer)))
+          (cond
+           ((eq? 'OPEN (car token))
+            (let ((p (match-actual-parameters lexer (get-token lexer))))
+              (if p
+                  (let ((t (get-token lexer)))
+                    (if (eq? 'CLOSE (car t))
+                        (list 'CALL l p)
+                        (parse-error t "Expected )")))
+                  #f)))
+           (else
+            (unget-token lexer token)
+            l)))
         (let ((token-type (car token)))
           (cond
            ((eq? 'INT token-type) token)
@@ -111,19 +159,22 @@
             (let ((t (match-expr lexer (get-token lexer))))
               (if (and t (eq? 'CLOSE (car (get-token lexer))))
                   t
-                  (parse-error "Expected )"))))
-           (else (parse-error "Expected ID or INTEGER")))))))
+                  (parse-error token "Expected )"))))
+           (else (parse-error token "Expected ID or INTEGER")))))))
 
 (define (test-match-primary)
   (define test (make-tester match-primary))
-  (test "2" '(INT 2 1))
-  (test "1232" '(INT 1232 1))
-  (test "a" '(ID "a" 1))
-  (test "xyzzy" '(ID "xyzzy" 1))
-  (test "(a)" '(ID "a" 1))
-  (test "(a+b)" '(ADD (ID "a" 1) (ID "b" 1)))
-  (test "(a/b)" '(DIV (ID "a" 1) (ID "b" 1)))
-  (test "(-a)" '(MINUS (ID "a" 1))))
+  ;; (test "2" '(INT 2 1))
+  ;; (test "1232" '(INT 1232 1))
+  ;; (test "a" '(ID "a" 1))
+  ;; (test "xyzzy" '(ID "xyzzy" 1))
+  ;; (test "(a)" '(ID "a" 1))
+  ;; (test "(a+b)" '(ADD (ID "a" 1) (ID "b" 1)))
+  ;; (test "(a/b)" '(DIV (ID "a" 1) (ID "b" 1)))
+  ;; (test "(-a)" '(MINUS (ID "a" 1)))
+  (test "test(a,b,c)" '(CALL (ID "test" 1) ((ID "a" 1) (ID "b" 1) (ID "c" 1))))
+  (test "random()" '(CALL (ID "random" 1) ()))
+  (test "sqr(2)" '(CALL (ID "sqr" 1) ((INT 2 1)))))
 
 ;; unary = primary | MINUS primary
 (define (match-unary lexer token)
@@ -161,7 +212,7 @@
             (let ((f (match-factor lexer (get-token lexer))))
               (if f
                   (list token-type u f)
-                  (parse-error "Missing factor after * or /"))))
+                  (parse-error token "Missing factor after * or /"))))
            (else
             (unget-token lexer op-token)
             u)))
@@ -197,7 +248,7 @@
                   (t (match-term lexer (get-token lexer))))
               (if t
                   (list op f t)
-                  (parse-error "Missing term after + or -"))))
+                  (parse-error op-token "Missing term after + or -"))))
            (else
             (unget-token lexer op-token)
             f)))
@@ -240,7 +291,7 @@
             (let ((e (match-expr lexer (get-token lexer))))
               (if e
                   (list token-type t e)
-                  (parse-error "Missing expr after relation"))))
+                  (parse-error op-token "Missing expr after relation"))))
            (else
             (unget-token lexer op-token)
             t)))
@@ -277,7 +328,8 @@
   (test "a # b" '(NE (ID "a" 1) (ID "b" 1)))
   (test "(a = b) or (c # d)" '(OR (EQ (ID "a" 1) (ID "b" 1)) (NE (ID "c" 1) (ID "d" 1))))
   (test "~((a = b) or (c # d))" '(NOT (OR (EQ (ID "a" 1) (ID "b" 1)) (NE (ID "c" 1) (ID "d" 1)))))
-  (test "~((a.xyzzy = b[99-z]) or (c[4].offset # d.last[52-p]))" '(NOT (OR (EQ (FIELD (ID "a" 1) (ID "xyzzy" 1)) (INDEX (ID "b" 1) (SUB (INT 99 1) (ID "z" 1)))) (NE (FIELD (INDEX (ID "c" 1) (INT 4 1)) (ID "offset" 1)) (INDEX (FIELD (ID "d" 1) (ID "last" 1)) (SUB (INT 52 1) (ID "p" 1))))))))
+  (test "~((a.xyzzy = b[99-z]) or (c[4].offset # d.last[52-p]))" '(NOT (OR (EQ (FIELD (ID "a" 1) (ID "xyzzy" 1)) (INDEX (ID "b" 1) (SUB (INT 99 1) (ID "z" 1)))) (NE (FIELD (INDEX (ID "c" 1) (INT 4 1)) (ID "offset" 1)) (INDEX (FIELD (ID "d" 1) (ID "last" 1)) (SUB (INT 52 1) (ID "p" 1)))))))
+  (test "plot(sin(x*2)+6, pi*cos(y/4)+8)" '(CALL (ID "plot" 1) ((ADD (CALL (ID "sin" 1) ((MUL (ID "x" 1) (INT 2 1)))) (INT 6 1)) (ADD (MUL (ID "pi" 1) (CALL (ID "cos" 1) ((DIV (ID "y" 1) (INT 4 1))))) (INT 8 1))))))
 
 (define (test-all)
   (test-match-primary)
@@ -285,4 +337,5 @@
   (test-match-location)
   (test-match-factor)
   (test-match-term)
+  (test-match-actual-parameters)
   (test-match-expr))

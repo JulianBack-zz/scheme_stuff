@@ -205,8 +205,7 @@
       (if (equal? result expected-result)
           (begin
             (write-string input)
-            (write-line " OK")
-	        (newline))
+            (write-line " OK"))
           (begin
             (write-string input)
             (write-line " FAIL")
@@ -221,6 +220,15 @@
           (ID "z" 6) (ASSIGN 6) (CHAR #\A 6) (SEMICOLON 6)
           (END 7) (SEMICOLON 7)))
   (test "0a12h" '((INT 2578 1)))
+  ;; Check for errors
   (test "123 (* unmatched comment" '((INT 123 1) (ERROR "EOF in comment" 1)))
   (test "\"hello" '((ERROR "EOF in string" 1)))
-  (test "0g12h" '((ERROR "Bad number" 1))))
+  (test "0g12h" '((ERROR "Bad number" 1)))
+  (test "?" '((ERROR #\? 1)))
+  (test "%" '((ERROR #\% 1)))
+  (test "'" '((ERROR #\' 1)))
+  (test "$" '((ERROR #\$ 1)))
+  (test "{" '((ERROR #\{ 1)))
+  (test "}" '((ERROR #\} 1)))
+  (test "_" '((ERROR #\_ 1)))
+  (test "@" '((ERROR #\@ 1))))
