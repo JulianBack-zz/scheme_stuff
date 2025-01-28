@@ -82,6 +82,9 @@
            ((char=? c #\&) (read-char port) '(AND))
            ((char=? c #\#) (read-char port) '(NE))
            ((char=? c #\~) (read-char port) '(NOT))
+           ((char=? c #\[) (read-char port) '(OPENSQ))
+           ((char=? c #\]) (read-char port) '(CLOSESQ))
+           ((char=? c #\.) (read-char port) '(DOT))
            ((char=? c #\") (read-char port) (get-string port))
            ((char=? c #\() (read-char port)
             (if (char=? #\* (peek-char port))
@@ -103,7 +106,7 @@
             (if (char=? #\= (peek-char port))
                 (begin (read-char port) '(LE))
                 '(LT)))
-           (else (read-char port) (cons 'ERROR c)))))))
+           (else (read-char port) (list 'ERROR c)))))))
 
 (define (get-identifier port)
   (let loop ((c (peek-char port)) (identifier '()))

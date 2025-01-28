@@ -13,7 +13,7 @@
 ;;;
 ;;; 1. DONE Add more operators: DIV, MOD, &, ~, OR
 ;;; 2. DONE Relational operators: =, #, <, >, <=, >, >=
-;;; 3. Add selectors: . notation for records, [] for arrays
+;;; 3. DONE Add selectors: . notation for records, [] for arrays
 ;;; 4. Add function calls
 ;;; 5. Add statements: assignment, IF, WHILE, REPEAT, procedure call
 ;;; 6. Add variable declarations
@@ -54,19 +54,65 @@
         (display obj)
         (newline))))
 
+;; desig = . ID | [ expr ]
+(define (match-desig lexer token)
+  (parse-trace "match-desig" token)
+  (cond
+   ((eq? 'DOT (car token))
+    (let ((t (get-token lexer)))
+      (if (eq? 'ID (car t))
+          (list 'FIELD t)
+          (parse-error "Bad field"))))
+   ((eq? 'OPENSQ (car token))
+    (let ((e (match-expr lexer (get-token lexer))))
+      (if (and e (eq? 'CLOSESQ (car (get-token lexer))))
+          (list 'INDEX e)
+          (parse-error "Expected ]"))))
+   (else 
+    (unget-token lexer token)
+    #f)))
+
+;; location = ID {desig}
+
+(define (match-location lexer token)
+  (parse-trace "match-location" token)
+  (if (eq? 'ID (car token))
+      (let loop ((d (match-desig lexer (get-token lexer))) (des token))
+        (cond
+         ((not d)
+          des)
+         ((eq? 'FIELD (car d))
+          (loop (match-desig lexer (get-token lexer)) (cons (car d) (cons des (cdr d)))))
+         ((eq? 'INDEX (car d))
+          (loop (match-desig lexer (get-token lexer)) (cons (car d) (cons des (cdr d)))))))
+      #f))
+
+(define (test-match-location)
+  (define test (make-tester match-location))
+  (test "a" '(ID "a" 1))
+  (test "a.b" '(FIELD (ID "a" 1) (ID "b" 1)))
+  (test "a.b.c" '(FIELD (FIELD (ID "a" 1) (ID "b" 1)) (ID "c" 1)))
+  (test "a[5]" '(INDEX (ID "a" 1) (INT 5 1)))
+  (test "a[x+1]" '(INDEX (ID "a" 1) (ADD (ID "x" 1) (INT 1 1))))
+  (test "a[x+1][y]" '(INDEX (INDEX (ID "a" 1) (ADD (ID "x" 1) (INT 1 1))) (ID "y" 1)))
+  (test "a[x+1].b" '(FIELD (INDEX (ID "a" 1) (ADD (ID "x" 1) (INT 1 1))) (ID "b" 1)))
+  (test "a.b[4].c" '(FIELD (INDEX (FIELD (ID "a" 1) (ID "b" 1)) (INT 4 1)) (ID "c" 1))))
+
 ;; primary = ID | INTEGER | OPEN expr CLOSE
 (define (match-primary lexer token)
   (parse-trace "match-primary " token) 
-  (let ((token-type (car token)))
-    (cond
-     ((eq? 'ID token-type) token)
-     ((eq? 'INT token-type) token)
-     ((eq? 'OPEN (car token))
-      (let ((t (match-expr lexer (get-token lexer))))
-        (if (and t (eq? 'CLOSE (car (get-token lexer))))
-            t
-            (parse-error "Expected )"))))
-     (else (parse-error "Expected ID or INTEGER")))))
+  (let ((l (match-location lexer token)))
+    (if l
+        l
+        (let ((token-type (car token)))
+          (cond
+           ((eq? 'INT token-type) token)
+           ((eq? 'OPEN (car token))
+            (let ((t (match-expr lexer (get-token lexer))))
+              (if (and t (eq? 'CLOSE (car (get-token lexer))))
+                  t
+                  (parse-error "Expected )"))))
+           (else (parse-error "Expected ID or INTEGER")))))))
 
 (define (test-match-primary)
   (define test (make-tester match-primary))
@@ -230,11 +276,13 @@
   (test "-(a+b)" '(MINUS (ADD (ID "a" 1) (ID "b" 1))))
   (test "a # b" '(NE (ID "a" 1) (ID "b" 1)))
   (test "(a = b) or (c # d)" '(OR (EQ (ID "a" 1) (ID "b" 1)) (NE (ID "c" 1) (ID "d" 1))))
-  (test "~((a = b) or (c # d))" '(NOT (OR (EQ (ID "a" 1) (ID "b" 1)) (NE (ID "c" 1) (ID "d" 1))))))
+  (test "~((a = b) or (c # d))" '(NOT (OR (EQ (ID "a" 1) (ID "b" 1)) (NE (ID "c" 1) (ID "d" 1)))))
+  (test "~((a.xyzzy = b[99-z]) or (c[4].offset # d.last[52-p]))" '(NOT (OR (EQ (FIELD (ID "a" 1) (ID "xyzzy" 1)) (INDEX (ID "b" 1) (SUB (INT 99 1) (ID "z" 1)))) (NE (FIELD (INDEX (ID "c" 1) (INT 4 1)) (ID "offset" 1)) (INDEX (FIELD (ID "d" 1) (ID "last" 1)) (SUB (INT 52 1) (ID "p" 1))))))))
 
 (define (test-all)
   (test-match-primary)
   (test-match-unary)
+  (test-match-location)
   (test-match-factor)
   (test-match-term)
   (test-match-expr))
