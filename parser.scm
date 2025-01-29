@@ -365,6 +365,53 @@
               ("0ABCH" (INT 2748 1))
               ("a div b" (DIV (ID "a" 1) (ID "b" 1))))))
 
+;;; if-statement = IF expr THEN statements {ELSEIF expr THEN statements} [ELSE statements] END
+
+;;; while-statement = WHILE expr DO statements END
+
+;;; repeat-statement = REPEAT statements UNTIL expr
+
+;;; assigment = location ASSIGN expr
+;;; procedure_call = location OPEN actual-parameters CLOSE
+(define (match-assignment-or-procedure-call lexer token)
+  (let ((l (match-location lexer token)))
+    (if l
+        (let ((t (get-token lexer)))
+          (cond
+           ((eq? 'ASSIGN (car t))
+            (let ((e (match-expr lexer (get-token lexer))))
+              (if e
+                  (list 'ASSIGN l e)
+                  #f)))
+           ((eq? 'OPEN (car t))
+            (let ((p (match-actual-parameters lexer (get-token lexer))))
+              (if p
+                  (let ((t (get-token lexer)))
+                    (if (eq? 'CLOSE (car t))
+                        (list 'CALL l p)
+                        (parse-error t "Expected )")))
+                  #f)))
+           (else
+            (parse-error t "Expected := or ("))))
+        #f)))
+
+(define (test-match-assignment-or-procedure-call)
+  (test-run "match-assignment-or-procedure-call" match-assignment-or-procedure-call
+            '(("a := b" (ASSIGN (ID "a" 1) (ID "b" 1)))
+              ("a := b + c" (ASSIGN (ID "a" 1) (ADD (ID "b" 1) (ID "c" 1))))
+              ("a.x := b / c" (ASSIGN (FIELD (ID "a" 1) (ID "x" 1)) (DIV (ID "b" 1) (ID "c" 1))))
+              ("a.x[99] := 2+4*b.c" (ASSIGN (INDEX (FIELD (ID "a" 1) (ID "x" 1)) (INT 99 1)) (ADD (INT 2 1) (MUL (INT 4 1) (FIELD (ID "b" 1) (ID "c" 1))))))
+              ("x[99] := 2 + 3 / 5" (ASSIGN (INDEX (ID "x" 1) (INT 99 1)) (ADD (INT 2 1) (DIV (INT 3 1) (INT 5 1)))))
+              ("z[55].g := func(1,2,3)" (ASSIGN (FIELD (INDEX (ID "z" 1) (INT 55 1)) (ID "g" 1)) (CALL (ID "func" 1) ((INT 1 1) (INT 2 1) (INT 3 1)))))
+              ("func(1,2,3)" (CALL (ID "func" 1) ((INT 1 1) (INT 2 1) (INT 3 1))))
+              ("func(6+x,sin(y))" (CALL (ID "func" 1) ((ADD (INT 6 1) (ID "x" 1)) (CALL (ID "sin" 1) ((ID "y" 1))))))
+              ("x.y(1,3,5)" (CALL (FIELD (ID "x" 1) (ID "y" 1)) ((INT 1 1) (INT 3 1) (INT 5 1))))
+              ("y[55](6,7,8)" (CALL (INDEX (ID "y" 1) (INT 55 1)) ((INT 6 1) (INT 7 1) (INT 8 1)))))))
+
+;;; statement = if-statement | while-statement | repeat-statement | assignment | procedure_call | <blank>
+
+;;; statements = [statement] {; statement}
+
 (define (test-all)
   (test-match-primary)
   (test-match-unary)
@@ -372,4 +419,5 @@
   (test-match-factor)
   (test-match-term)
   (test-match-actual-parameters)
-  (test-match-expr))
+  (test-match-expr)
+  (test-match-assignment-or-procedure-call))
