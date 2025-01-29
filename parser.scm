@@ -35,24 +35,47 @@
 
 (define *parse-trace* #f)
 
+;;; Number of tests executed
+(define *test-count* 0)
+
+;;; Number of tests failed
+(define *test-failures* 0)
+
 ; Returns a test function for a parse function
 (define (make-tester match-function)
   (lambda (str expected)
     (define (parse lexer)
       (match-function lexer (get-token lexer)))
     (let ((result (parse (make-lexer-from-string str))))
-      (display str)
       (if (equal? result expected)
-          (display " OK")
-          (begin
-            (display " FAIL GOT")
-            (newline)
-            (display result)
-            (newline)
-            (display "EXPECTED")
-            (newline)
-            (display expected)))
-      (newline))))
+          (test-success)
+          (test-fail str result expected)))))
+
+(define (test-init name match-function)
+  (printf "Testing ~A~N" name)
+  (set! *test-count* 0)
+  (set! *test-failures* 0)
+  (make-tester match-function))
+
+(define (test-summary)
+  (if (positive? *test-failures*)
+      (printf "~A tests / ~A errors~N" *test-count* *test-failures*)))
+
+(define (test-success)
+  (set! *test-count* (+ *test-count* 1)))
+
+(define (test-fail str result expected)
+  (set! *test-count* (+ *test-count* 1))
+  (set! *test-failures* (+ *test-failures* 1))
+  (display str)
+  (display " FAIL GOT")
+  (newline)
+  (write result)
+  (newline)
+  (display "EXPECTED")
+  (newline)
+  (write expected)
+  (newline))
 
 (define (parse-trace msg obj)
   (if *parse-trace*
@@ -94,7 +117,7 @@
       #f))
 
 (define (test-match-location)
-  (define test (make-tester match-location))
+  (define test (test-init "match-location" match-location))
   (test "a" '(ID "a" 1))
   (test "a.b" '(FIELD (ID "a" 1) (ID "b" 1)))
   (test "a.b.c" '(FIELD (FIELD (ID "a" 1) (ID "b" 1)) (ID "c" 1)))
@@ -102,7 +125,8 @@
   (test "a[x+1]" '(INDEX (ID "a" 1) (ADD (ID "x" 1) (INT 1 1))))
   (test "a[x+1][y]" '(INDEX (INDEX (ID "a" 1) (ADD (ID "x" 1) (INT 1 1))) (ID "y" 1)))
   (test "a[x+1].b" '(FIELD (INDEX (ID "a" 1) (ADD (ID "x" 1) (INT 1 1))) (ID "b" 1)))
-  (test "a.b[4].c" '(FIELD (INDEX (FIELD (ID "a" 1) (ID "b" 1)) (INT 4 1)) (ID "c" 1))))
+  (test "a.b[4].c" '(FIELD (INDEX (FIELD (ID "a" 1) (ID "b" 1)) (INT 4 1)) (ID "c" 1)))
+  (test-summary))
 
 ;; actual-parameters = [expr] {COMMA expr}
 (define (match-actual-parameters lexer token)
@@ -126,13 +150,14 @@
             #f))))
 
 (define (test-match-actual-parameters)
-  (define test (make-tester match-actual-parameters))
+  (define test (test-init "match-actual-parameters" match-actual-parameters))
   (test ")" '())
   (test "a" '((ID "a" 1)))
   (test "99" '((INT 99 1)))
   (test "a, b" '((ID "a" 1) (ID "b" 1)))
   (test "1+2, b*c" '((ADD (INT 1 1) (INT 2 1)) (MUL (ID "b" 1) (ID "c" 1))))
-  (test "1,2,3,4" '((INT 1 1) (INT 2 1) (INT 3 1) (INT 4 1))))
+  (test "1,2,3,4" '((INT 1 1) (INT 2 1) (INT 3 1) (INT 4 1)))
+  (test-summary))
 
 ;; primary = location | location OPEN actual-parameters CLOSE | INTEGER | OPEN expr CLOSE
 (define (match-primary lexer token)
@@ -163,18 +188,19 @@
            (else (parse-error token "Expected ID or INTEGER")))))))
 
 (define (test-match-primary)
-  (define test (make-tester match-primary))
-  ;; (test "2" '(INT 2 1))
-  ;; (test "1232" '(INT 1232 1))
-  ;; (test "a" '(ID "a" 1))
-  ;; (test "xyzzy" '(ID "xyzzy" 1))
-  ;; (test "(a)" '(ID "a" 1))
-  ;; (test "(a+b)" '(ADD (ID "a" 1) (ID "b" 1)))
-  ;; (test "(a/b)" '(DIV (ID "a" 1) (ID "b" 1)))
-  ;; (test "(-a)" '(MINUS (ID "a" 1)))
+  (define test (test-init "match-primary" match-primary))
+  (test "2" '(INT 2 1))
+  (test "1232" '(INT 1232 1))
+  (test "a" '(ID "a" 1))
+  (test "xyzzy" '(ID "xyzzy" 1))
+  (test "(a)" '(ID "a" 1))
+  (test "(a+b)" '(ADD (ID "a" 1) (ID "b" 1)))
+  (test "(a/b)" '(DIV (ID "a" 1) (ID "b" 1)))
+  (test "(-a)" '(MINUS (ID "a" 1)))
   (test "test(a,b,c)" '(CALL (ID "test" 1) ((ID "a" 1) (ID "b" 1) (ID "c" 1))))
   (test "random()" '(CALL (ID "random" 1) ()))
-  (test "sqr(2)" '(CALL (ID "sqr" 1) ((INT 2 1)))))
+  (test "sqr(2)" '(CALL (ID "sqr" 1) ((INT 2 1))))
+  (test-summary))
 
 ;; unary = primary | MINUS primary
 (define (match-unary lexer token)
@@ -189,13 +215,14 @@
      (else (match-primary lexer token)))))
 
 (define (test-match-unary)
-  (define test (make-tester match-unary))
+  (define test (test-init "match-unary" match-unary))
   (test "2" '(INT 2 1))
   (test "1232" '(INT 1232 1))
   (test "-45" '(MINUS (INT 45 1)))
   (test "a" '(ID "a" 1))
   (test "-b" '(MINUS (ID "b" 1)))
-  (test "-(a+b)" '(MINUS (ADD (ID "a" 1) (ID "b" 1)))))
+  (test "-(a+b)" '(MINUS (ADD (ID "a" 1) (ID "b" 1))))
+  (test-summary))
 
 ;; factor = unary | unary (MUL|DIV) factor
 (define (match-factor lexer token)
@@ -219,7 +246,7 @@
         #f)))
 
 (define (test-match-factor)
-  (define test (make-tester match-factor))
+  (define test (test-init "match-factor" match-factor))
   (test "a" '(ID "a" 1))
   (test "2" '(INT 2 1))
   (test "-2" '(MINUS (INT 2 1)))
@@ -228,7 +255,8 @@
   (test "-a * 2" '(MUL (MINUS (ID "a" 1)) (INT 2 1)))
   (test "b / -a * 2" '(DIV (ID "b" 1) (MUL (MINUS (ID "a" 1)) (INT 2 1))))
   (test "2*(b / -a * 2)" '(MUL (INT 2 1) (DIV (ID "b" 1) (MUL (MINUS (ID "a" 1)) (INT 2 1)))))
-  (test "(b / -a * 2)/x" '(DIV (DIV (ID "b" 1) (MUL (MINUS (ID "a" 1)) (INT 2 1))) (ID "x" 1))))
+  (test "(b / -a * 2)/x" '(DIV (DIV (ID "b" 1) (MUL (MINUS (ID "a" 1)) (INT 2 1))) (ID "x" 1)))
+  (test-summary))
 
 ;; term = factor | factor (PLUS|MINUS|OR) term
 (define (match-term lexer token)
@@ -255,7 +283,7 @@
         #f)))
 
 (define (test-match-term)
-  (define test (make-tester match-term))
+  (define test (test-init "match-term" match-term))
   (test "a" '(ID "a" 1))
   (test "2" '(INT 2 1))
   (test "2 + 5" '(ADD (INT 2 1) (INT 5 1)))
@@ -272,7 +300,8 @@
   (test "(a+b)" '(ADD (ID "a" 1) (ID "b" 1)))
   (test "3*(a+b)" '(MUL (INT 3 1) (ADD (ID "a" 1) (ID "b" 1))))
   (test "(a+b)/2" '(DIV (ADD (ID "a" 1) (ID "b" 1)) (INT 2 1)))
-  (test "(a + b) * (c - d)" '(MUL (ADD (ID "a" 1) (ID "b" 1)) (SUB (ID "c" 1) (ID "d" 1)))))
+  (test "(a + b) * (c - d)" '(MUL (ADD (ID "a" 1) (ID "b" 1)) (SUB (ID "c" 1) (ID "d" 1))))
+  (test-summary))
 
 ;; expr = term | term (EQ|NE|LT|LE|GT|GE) expr
 (define (match-expr lexer token)
@@ -298,7 +327,7 @@
         #f)))
 
 (define (test-match-expr)
-  (define test (make-tester match-expr))
+  (define test (test-init "match-expr" match-expr))
   (test "a" '(ID "a" 1))
   (test "2" '(INT 2 1))
   (test "2 + 5" '(ADD (INT 2 1) (INT 5 1)))
@@ -329,7 +358,10 @@
   (test "(a = b) or (c # d)" '(OR (EQ (ID "a" 1) (ID "b" 1)) (NE (ID "c" 1) (ID "d" 1))))
   (test "~((a = b) or (c # d))" '(NOT (OR (EQ (ID "a" 1) (ID "b" 1)) (NE (ID "c" 1) (ID "d" 1)))))
   (test "~((a.xyzzy = b[99-z]) or (c[4].offset # d.last[52-p]))" '(NOT (OR (EQ (FIELD (ID "a" 1) (ID "xyzzy" 1)) (INDEX (ID "b" 1) (SUB (INT 99 1) (ID "z" 1)))) (NE (FIELD (INDEX (ID "c" 1) (INT 4 1)) (ID "offset" 1)) (INDEX (FIELD (ID "d" 1) (ID "last" 1)) (SUB (INT 52 1) (ID "p" 1)))))))
-  (test "plot(sin(x*2)+6, pi*cos(y/4)+8)" '(CALL (ID "plot" 1) ((ADD (CALL (ID "sin" 1) ((MUL (ID "x" 1) (INT 2 1)))) (INT 6 1)) (ADD (MUL (ID "pi" 1) (CALL (ID "cos" 1) ((DIV (ID "y" 1) (INT 4 1))))) (INT 8 1))))))
+  (test "plot(sin(x*2)+6, pi*cos(y/4)+8)" '(CALL (ID "plot" 1) ((ADD (CALL (ID "sin" 1) ((MUL (ID "x" 1) (INT 2 1)))) (INT 6 1)) (ADD (MUL (ID "pi" 1) (CALL (ID "cos" 1) ((DIV (ID "y" 1) (INT 4 1))))) (INT 8 1)))))
+  (test "0ABCH" '(INT 2748 1))
+  (test "a div b" '(DIV (ID "a" 1) (ID "b" 1)))
+  (test-summary))
 
 (define (test-all)
   (test-match-primary)
