@@ -187,10 +187,18 @@
                      (lexer-set-saved-tokens! lexer (cdr t))
                      (car t)))))
     (if *token-trace*
-        (display token))
+        (begin
+          (display "get ")
+          (write token)
+          (newline)))
     token))
 
 (define (unget-token lexer t)
+  (if *token-trace*
+      (begin
+        (display "unget ")
+        (write t)
+        (newline)))
   (lexer-set-saved-tokens! lexer (cons t (lexer-get-saved-tokens lexer))))
 
 (define (test-lexer)

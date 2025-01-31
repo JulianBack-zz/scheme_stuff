@@ -380,11 +380,22 @@
 ;;; Match optional elseif clauses.  Return '() if no elseif clauses, #f if error
 (define (match-elseif lexer token)
   (parse-trace "match-elseif" token)
-  (if (eq? 'ELSEIF (car token))
-      (parse-error "ELSEIF not yet supported")
-      (begin
-        (unget-token lexer token)
-        '())))
+  (let loop ((t token) (eif '()))
+    ;;(display "loop ") (write t) (newline)
+    (if (eq? 'ELSEIF (car t))
+        (let ((e (match-expr lexer (get-token lexer))))
+          (if e
+              (let ((t (get-token lexer)))
+                (if (eq? 'THEN (car t))
+                    (let ((s (match-statement-list lexer (get-token lexer))))
+                      (if s
+                          (loop (get-token lexer) (cons (cons e s) eif))
+                          #f))
+                    (parse-error t "Expected THEN after ELSEIF")))
+              #f))
+        (begin
+          (unget-token lexer t)
+          (reverse eif)))))
 
 ;;; if-statement = IF expr THEN statement-list {ELSEIF expr THEN statement-list} [ELSE statement-list] END
 (define (match-if-statement lexer token)
@@ -398,17 +409,17 @@
                     (if s
                         (let ((elseif (match-elseif lexer (get-token lexer))))
                           (if elseif
-                              (let ((else (match-else lexer (get-token lexer))))
-                                (if else
+                              (let ((els (match-else lexer (get-token lexer))))
+                                (if els
                                     (let ((t (get-token lexer)))
                                       (if (eq? 'END (car t))
                                           (if (null? elseif)
-                                              (if (null? else)
+                                              (if (null? els)
                                                   (list 'COND (cons e s))
-                                                  (list 'COND (cons e s) else))
-                                              (if (null? else)
+                                                  (list 'COND (cons e s) els))
+                                              (if (null? els)
                                                   (append (list 'COND (cons e s) elseif))
-                                                  (append (list 'COND (cons e s) elseif (list else)))))
+                                                  (append (list 'COND (cons e s) elseif (list els)))))
                                           (parse-error t "Expected END in IF")))
                                     #f))
                               #f))
@@ -419,7 +430,8 @@
 
 (define (test-match-if-statement)
   (test-run "match-if-statement" match-if-statement
-            '(("if a = b then x := y end"
+            '(
+              ("if a = b then x := y end"
                (COND ((EQ (ID "a" 1) (ID "b" 1))
                       (ASSIGN (ID "x" 1) (ID "y" 1)))))
               ("if a + 1 >= fred() then a := b; c:= d else a := a + 1 end"
@@ -428,7 +440,29 @@
                       (ASSIGN (ID "c" 1) (ID "d" 1)))
                      (ELSE
                       ((ASSIGN (ID "a" 1) (ADD (ID "a" 1) (INT 1 1)))))))
-              )))
+              ("if a > 99 then b := 54 end"
+               (COND ((GT (ID "a" 1) (INT 99 1))
+                      (ASSIGN (ID "b" 1) (INT 54 1)))))
+              ("if a > 99 then b := 54 elseif a > 45 then b := 21 end"
+               (COND ((GT (ID "a" 1) (INT 99 1))
+                      (ASSIGN (ID "b" 1) (INT 54 1)))
+                     (((GT (ID "a" 1) (INT 45 1))
+                       (ASSIGN (ID "b" 1) (INT 21 1))))))
+              ("if a > 99 then b := 54 elseif a > 45 then b := 21 elseif a > 13 then b := 11 end"
+               (COND ((GT (ID "a" 1) (INT 99 1))
+                      (ASSIGN (ID "b" 1) (INT 54 1)))
+                     (((GT (ID "a" 1) (INT 45 1))
+                       (ASSIGN (ID "b" 1) (INT 21 1)))
+                      ((GT (ID "a" 1) (INT 13 1))
+                       (ASSIGN (ID "b" 1) (INT 11 1))))))
+              ("if a > 99 then b := 54 elseif a > 45 then b := 21 elseif a > 13 then b := 11 else b := 3 end"
+               (COND ((GT (ID "a" 1) (INT 99 1))
+                      (ASSIGN (ID "b" 1) (INT 54 1)))
+                     (((GT (ID "a" 1) (INT 45 1))
+                       (ASSIGN (ID "b" 1) (INT 21 1)))
+                      ((GT (ID "a" 1) (INT 13 1))
+                       (ASSIGN (ID "b" 1) (INT 11 1))))
+                     ((ELSE ((ASSIGN (ID "b" 1) (INT 3 1))))))))))
 
 ;;; while-statement = WHILE expr DO statements END
 
@@ -533,4 +567,5 @@
   (test-match-expr)
   (test-match-assignment-or-procedure-call)
   (test-match-statement)
-  (test-match-statement-list))
+  (test-match-statement-list)
+  (test-match-if-statement))
