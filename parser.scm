@@ -402,7 +402,13 @@
                                 (if else
                                     (let ((t (get-token lexer)))
                                       (if (eq? 'END (car t))
-                                          (list 'IF (cons (cons e s) elseif) else)
+                                          (if (null? elseif)
+                                              (if (null? else)
+                                                  (list 'COND (cons e s))
+                                                  (list 'COND (cons e s) else))
+                                              (if (null? else)
+                                                  (append (list 'COND (cons e s) elseif))
+                                                  (append (list 'COND (cons e s) elseif (list else)))))
                                           (parse-error t "Expected END in IF")))
                                     #f))
                               #f))
@@ -413,7 +419,16 @@
 
 (define (test-match-if-statement)
   (test-run "match-if-statement" match-if-statement
-            '(("if a = b then x := y end" ()))))
+            '(("if a = b then x := y end"
+               (COND ((EQ (ID "a" 1) (ID "b" 1))
+                      (ASSIGN (ID "x" 1) (ID "y" 1)))))
+              ("if a + 1 >= fred() then a := b; c:= d else a := a + 1 end"
+               (COND ((GE (ADD (ID "a" 1) (INT 1 1)) (CALL (ID "fred" 1) ()))
+                      (ASSIGN (ID "a" 1) (ID "b" 1))
+                      (ASSIGN (ID "c" 1) (ID "d" 1)))
+                     (ELSE
+                      ((ASSIGN (ID "a" 1) (ADD (ID "a" 1) (INT 1 1)))))))
+              )))
 
 ;;; while-statement = WHILE expr DO statements END
 
