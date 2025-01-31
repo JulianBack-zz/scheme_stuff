@@ -365,7 +365,55 @@
               ("0ABCH" (INT 2748 1))
               ("a div b" (DIV (ID "a" 1) (ID "b" 1))))))
 
-;;; if-statement = IF expr THEN statements {ELSEIF expr THEN statements} [ELSE statements] END
+;;; Match optional else clause.  Return '() if no else clause, #f if error
+(define (match-else lexer token)
+  (parse-trace "match-else" token)
+  (if (eq? 'ELSE (car token))
+      (let ((s (match-statement-list lexer (get-token lexer))))
+        (if s
+            (list 'ELSE s)
+            (parse-error "Bad statements after ELSE")))
+      (begin
+        (unget-token lexer token)
+        '())))
+
+;;; Match optional elseif clauses.  Return '() if no elseif clauses, #f if error
+(define (match-elseif lexer token)
+  (parse-trace "match-elseif" token)
+  (if (eq? 'ELSEIF (car token))
+      (parse-error "ELSEIF not yet supported")
+      (begin
+        (unget-token lexer token)
+        '())))
+
+;;; if-statement = IF expr THEN statement-list {ELSEIF expr THEN statement-list} [ELSE statement-list] END
+(define (match-if-statement lexer token)
+  (parse-trace "match-if-statement" token)
+  (if (eq? 'IF (car token))
+      (let ((e (match-expr lexer (get-token lexer))))
+        (if e
+            (let ((t (get-token lexer)))
+              (if (eq? 'THEN (car t))
+                  (let ((s (match-statement-list lexer (get-token lexer))))
+                    (if s
+                        (let ((elseif (match-elseif lexer (get-token lexer))))
+                          (if elseif
+                              (let ((else (match-else lexer (get-token lexer))))
+                                (if else
+                                    (let ((t (get-token lexer)))
+                                      (if (eq? 'END (car t))
+                                          (list 'IF (cons (cons e s) elseif) else)
+                                          (parse-error t "Expected END in IF")))
+                                    #f))
+                              #f))
+                        #f))
+                  (parse-error t "Expected THEN")))
+            (parse-error token "Bad expression in IF")))
+      #f))
+
+(define (test-match-if-statement)
+  (test-run "match-if-statement" match-if-statement
+            '(("if a = b then x := y end" ()))))
 
 ;;; while-statement = WHILE expr DO statements END
 
@@ -374,6 +422,7 @@
 ;;; assigment = location ASSIGN expr
 ;;; procedure_call = location OPEN actual-parameters CLOSE
 (define (match-assignment-or-procedure-call lexer token)
+  (parse-trace "match-assignment-or-procedure-call" token)
   (let ((l (match-location lexer token)))
     (if l
         (let ((t (get-token lexer)))
@@ -409,8 +458,55 @@
               ("y[55](6,7,8)" (CALL (INDEX (ID "y" 1) (INT 55 1)) ((INT 6 1) (INT 7 1) (INT 8 1)))))))
 
 ;;; statement = if-statement | while-statement | repeat-statement | assignment | procedure_call | <blank>
+(define (match-statement lexer token)
+  (parse-trace "match-statement" token)
+  (let ((ap (match-assignment-or-procedure-call lexer token)))
+    (if ap
+        ap
+        (let ((ifs (match-if-statement lexer token)))
+          (if ifs
+              ifs
+              ;; TODO add WHILE and REPEAT
+              #f)))))
 
-;;; statements = [statement] {; statement}
+(define (test-match-statement)
+  (test-run "match-statement" match-statement
+            '(("a := b" (ASSIGN (ID "a" 1) (ID "b" 1)))
+              ("a := b + c" (ASSIGN (ID "a" 1) (ADD (ID "b" 1) (ID "c" 1))))
+              ("a.x := b / c" (ASSIGN (FIELD (ID "a" 1) (ID "x" 1)) (DIV (ID "b" 1) (ID "c" 1))))
+              ("a.x[99] := 2+4*b.c" (ASSIGN (INDEX (FIELD (ID "a" 1) (ID "x" 1)) (INT 99 1)) (ADD (INT 2 1) (MUL (INT 4 1) (FIELD (ID "b" 1) (ID "c" 1))))))
+              ("x[99] := 2 + 3 / 5" (ASSIGN (INDEX (ID "x" 1) (INT 99 1)) (ADD (INT 2 1) (DIV (INT 3 1) (INT 5 1)))))
+              ("z[55].g := func(1,2,3)" (ASSIGN (FIELD (INDEX (ID "z" 1) (INT 55 1)) (ID "g" 1)) (CALL (ID "func" 1) ((INT 1 1) (INT 2 1) (INT 3 1)))))
+              ("func(1,2,3)" (CALL (ID "func" 1) ((INT 1 1) (INT 2 1) (INT 3 1))))
+              ("func(6+x,sin(y))" (CALL (ID "func" 1) ((ADD (INT 6 1) (ID "x" 1)) (CALL (ID "sin" 1) ((ID "y" 1))))))
+              ("x.y(1,3,5)" (CALL (FIELD (ID "x" 1) (ID "y" 1)) ((INT 1 1) (INT 3 1) (INT 5 1))))
+              ("y[55](6,7,8)" (CALL (INDEX (ID "y" 1) (INT 55 1)) ((INT 6 1) (INT 7 1) (INT 8 1)))))))
+
+
+;;; statement-list = [statement] {; statement}
+(define (match-statement-list lexer token)
+  (parse-trace "match-statement-list" token)
+  (let ((s (match-statement lexer token)))
+    (if s
+        (let loop ((stats (list s)) (token (get-token lexer)))
+          (if (eq? 'SEMICOLON (car token))
+              (let ((s (match-statement lexer (get-token lexer))))
+                (if s
+                    (loop (cons s stats) (get-token lexer))
+                    (parse-error token "Expected statement")))
+              (begin
+                (unget-token lexer token)
+                (reverse stats))))
+        '())))
+
+(define (test-match-statement-list)
+  (test-run "match-statement-list" match-statement-list
+            '(("a := b" ((ASSIGN (ID "a" 1) (ID "b" 1))))
+              ("a := b; d := c" ((ASSIGN (ID "a" 1) (ID "b" 1)) (ASSIGN (ID "d" 1) (ID "c" 1))))
+              ("func(1,2,3)" ((CALL (ID "func" 1) ((INT 1 1) (INT 2 1) (INT 3 1)))))
+              ("func(1,2,3); x := y +1" ((CALL (ID "func" 1) ((INT 1 1) (INT 2 1) (INT 3 1))) (ASSIGN (ID "x" 1) (ADD (ID "y" 1) (INT 1 1)))))
+              ("" ())
+              (";;" ()))))
 
 (define (test-all)
   (test-match-primary)
@@ -420,4 +516,6 @@
   (test-match-term)
   (test-match-actual-parameters)
   (test-match-expr)
-  (test-match-assignment-or-procedure-call))
+  (test-match-assignment-or-procedure-call)
+  (test-match-statement)
+  (test-match-statement-list))
