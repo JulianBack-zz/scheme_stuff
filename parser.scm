@@ -16,11 +16,12 @@
 ;;; 3. DONE Add selectors: . notation for records, [] for arrays
 ;;; 4. DONE function calls
 ;;; 5. DONE statements: assignment, IF, WHILE, REPEAT, procedure call
-;;; 6. Strings in expressions
+;;; 6. DONE Strings in expressions
 ;;; 8. Add variable declarations
 ;;; 8. Add procedure declarations
-;;; 9. Add type declaractions
-;;; 10. Add Module statement
+;;; 9. Add type declarations
+;;; 10. Add const declarations
+;;; 11. Add Module statement
 
 (import (chicken format))
 
@@ -46,6 +47,7 @@
 ;;; name - name of function being tested
 ;;; match-function - the function
 ;;; tests list of tests.  Each test is a list of string to parse and expected parse tree
+;;; TODO - get rid of global variables
 (define (test-run name match-function tests)
   (let ((test (make-tester match-function)))
     (printf "Testing ~A~N" name)
@@ -167,7 +169,7 @@
               ("1+2, b*c" ((ADD (INT 1 1) (INT 2 1)) (MUL (ID "b" 1) (ID "c" 1))))
               ("1,2,3,4" ((INT 1 1) (INT 2 1) (INT 3 1) (INT 4 1))))))
 
-;; primary = location | location OPEN actual-parameters CLOSE | INTEGER | OPEN expr CLOSE
+;; primary = location | location OPEN actual-parameters CLOSE | INTEGER | STRING | OPEN expr CLOSE
 (define (match-primary lexer token)
   (parse-trace "match-primary " token) 
   (let ((l (match-location lexer token)))
@@ -188,6 +190,7 @@
         (let ((token-type (car token)))
           (cond
            ((eq? 'INT token-type) token)
+           ((eq? 'STRING token-type) token)
            ((eq? 'OPEN (car token))
             (let ((t (match-expr lexer (get-token lexer))))
               (if (and t (eq? 'CLOSE (car (get-token lexer))))
@@ -615,20 +618,23 @@
               ("func(1,2,3); x := y +1" ((CALL (ID "func" 1) ((INT 1 1) (INT 2 1) (INT 3 1))) (ASSIGN (ID "x" 1) (ADD (ID "y" 1) (INT 1 1)))))
               ("" ())
               (";;" ())
-              ("x := 1;\ny := 2;\nwhile x > y do\n  if x > 2* y then\n    print(x)\n  else\n    print(y)\n  end\nend"
+              ("x := 1;\ny := 2;\nwhile x > y do\n  if x > 2* y then\n    print(\"wow\")\n  else\n    print(\"ok\")\n  end\nend"
                ((ASSIGN (ID "x" 1) (INT 1 1))
                 (ASSIGN (ID "y" 2) (INT 2 2))
                 (WHILE (GT (ID "x" 3) (ID "y" 3))
                        ((COND ((GT (ID "x" 4) (MUL (INT 2 4) (ID "y" 4)))
-                               (CALL (ID "print" 5) ((ID "x" 5))))
-                              (ELSE ((CALL (ID "print" 7) ((ID "y" 7))))))))))
-              ("repeat\n  x := x + 1;\n  y := x*2;\n  if y - x > 6 then\n    print(x)\n  end;\n  p := p+3\nuntil p > 99;\nprint(x, y)"
-               ((REPEAT ((ASSIGN (ID "x" 2) (ADD (ID "x" 2) (INT 1 2)))
-                         (ASSIGN (ID "y" 3) (MUL (ID "x" 3) (INT 2 3)))
-                         (COND ((GT (SUB (ID "y" 4) (ID "x" 4)) (INT 6 4)) (CALL (ID "print" 5) ((ID "x" 5)))))
-                         (ASSIGN (ID "p" 7) (ADD (ID "p" 7) (INT 3 7))))
-                        (GT (ID "p" 8) (INT 99 8)))
-                (CALL (ID "print" 9) ((ID "x" 9) (ID "y" 9))))) )))
+                               (CALL (ID "print" 5) ((STRING "wow" 5))))
+                              (ELSE
+                               ((CALL (ID "print" 7) ((STRING "ok" 7))))))))))
+              ("repeat\n  x := x + 1;\n  y := x*2;\n  if y - x > 6 then\n    print(\"big stuff\")\n  end;\n  p := p+3\nuntil p > 99;\nprint(x, y)"
+               ((REPEAT
+                 ((ASSIGN (ID "x" 2) (ADD (ID "x" 2) (INT 1 2)))
+                  (ASSIGN (ID "y" 3) (MUL (ID "x" 3) (INT 2 3)))
+                  (COND ((GT (SUB (ID "y" 4) (ID "x" 4)) (INT 6 4))
+                         (CALL (ID "print" 5) ((STRING "big stuff" 5)))))
+                  (ASSIGN (ID "p" 7) (ADD (ID "p" 7) (INT 3 7))))
+                 (GT (ID "p" 8) (INT 99 8)))
+                (CALL (ID "print" 9) ((ID "x" 9) (ID "y" 9))))))))
 
 (define (test-all)
   (test-match-primary)
