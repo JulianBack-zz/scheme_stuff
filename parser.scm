@@ -15,11 +15,12 @@
 ;;; 2. DONE Relational operators: =, #, <, >, <=, >, >=
 ;;; 3. DONE Add selectors: . notation for records, [] for arrays
 ;;; 4. DONE function calls
-;;; 5. Add statements: assignment, IF, WHILE, REPEAT, procedure call
-;;; 6. Add variable declarations
-;;; 7. Add procedure declarations
-;;; 8. Add type declaractions
-;;; 9. Add Module statement
+;;; 5. DONE statements: assignment, IF, WHILE, REPEAT, procedure call
+;;; 6. Strings in expressions
+;;; 8. Add variable declarations
+;;; 8. Add procedure declarations
+;;; 9. Add type declaractions
+;;; 10. Add Module statement
 
 (import (chicken format))
 
@@ -465,8 +466,61 @@
                      ((ELSE ((ASSIGN (ID "b" 1) (INT 3 1))))))))))
 
 ;;; while-statement = WHILE expr DO statements END
+(define (match-while-do lexer token)
+  (parse-trace "match-while-do" token)
+  (if (eq? 'WHILE (car token))
+      (let ((e (match-expr lexer (get-token lexer))))
+        (if e
+            (let ((t (get-token lexer)))
+              (if (eq? 'DO (car t))
+                  (let ((s (match-statement-list lexer (get-token lexer))))
+                    (if s
+                        (let ((t (get-token lexer)))
+                          (if (eq? 'END (car t))
+                              (list 'WHILE e s)
+                              (parse-error t "Expected END in WHILE")))
+                        #f))
+                  #f))
+            (parse-error token "Expected DO")))
+      #f))
+
+(define (test-match-while-do)
+  (test-run "match-while-do" match-while-do
+            '(
+              ("while a do b() end"
+               (WHILE (ID "a" 1)
+                      ((CALL (ID "b" 1) ()))))
+              ("while a < b do a := a + 1; print(a) end"
+               (WHILE (LT (ID "a" 1) (ID "b" 1))
+                      ((ASSIGN (ID "a" 1) (ADD (ID "a" 1) (INT 1 1)))
+                       (CALL (ID "print" 1) ((ID "a" 1)))))))))
 
 ;;; repeat-statement = REPEAT statements UNTIL expr
+(define (match-repeat-until lexer token)
+  (parse-trace "match-repeat-until" token)
+  (if (eq? 'REPEAT (car token))
+      (let ((s (match-statement-list lexer (get-token lexer))))
+        (if s
+            (let ((t (get-token lexer)))
+              (if (eq? 'UNTIL (car t))
+                  (let ((e (match-expr lexer (get-token lexer))))
+                    (if e
+                        (list 'REPEAT s e)
+                        #f))
+                  (parse-error t "Expected UNTIL")))
+            #f))
+      #f))
+
+(define (test-match-repeat-until)
+  (test-run "match-repeat-until" match-repeat-until
+            '(
+              ("repeat b() until a"
+               (REPEAT ((CALL (ID "b" 1) ()))
+                       (ID "a" 1)))
+              ("repeat a := a + 1; print(a) until a >= b"
+               (REPEAT ((ASSIGN (ID "a" 1) (ADD (ID "a" 1) (INT 1 1)))
+                        (CALL (ID "print" 1) ((ID "a" 1))))
+                       (GE (ID "a" 1) (ID "b" 1)))))))
 
 ;;; assigment = location ASSIGN expr
 ;;; procedure_call = location OPEN actual-parameters CLOSE
@@ -515,8 +569,13 @@
         (let ((ifs (match-if-statement lexer token)))
           (if ifs
               ifs
-              ;; TODO add WHILE and REPEAT
-              #f)))))
+              (let ((wh (match-while-do lexer token)))
+                (if wh
+                    wh
+                    (let ((rp (match-repeat-until lexer token)))
+                      (if rp
+                          rp
+                          #f)))))))))
 
 (define (test-match-statement)
   (test-run "match-statement" match-statement
@@ -555,7 +614,21 @@
               ("func(1,2,3)" ((CALL (ID "func" 1) ((INT 1 1) (INT 2 1) (INT 3 1)))))
               ("func(1,2,3); x := y +1" ((CALL (ID "func" 1) ((INT 1 1) (INT 2 1) (INT 3 1))) (ASSIGN (ID "x" 1) (ADD (ID "y" 1) (INT 1 1)))))
               ("" ())
-              (";;" ()))))
+              (";;" ())
+              ("x := 1;\ny := 2;\nwhile x > y do\n  if x > 2* y then\n    print(x)\n  else\n    print(y)\n  end\nend"
+               ((ASSIGN (ID "x" 1) (INT 1 1))
+                (ASSIGN (ID "y" 2) (INT 2 2))
+                (WHILE (GT (ID "x" 3) (ID "y" 3))
+                       ((COND ((GT (ID "x" 4) (MUL (INT 2 4) (ID "y" 4)))
+                               (CALL (ID "print" 5) ((ID "x" 5))))
+                              (ELSE ((CALL (ID "print" 7) ((ID "y" 7))))))))))
+              ("repeat\n  x := x + 1;\n  y := x*2;\n  if y - x > 6 then\n    print(x)\n  end;\n  p := p+3\nuntil p > 99;\nprint(x, y)"
+               ((REPEAT ((ASSIGN (ID "x" 2) (ADD (ID "x" 2) (INT 1 2)))
+                         (ASSIGN (ID "y" 3) (MUL (ID "x" 3) (INT 2 3)))
+                         (COND ((GT (SUB (ID "y" 4) (ID "x" 4)) (INT 6 4)) (CALL (ID "print" 5) ((ID "x" 5)))))
+                         (ASSIGN (ID "p" 7) (ADD (ID "p" 7) (INT 3 7))))
+                        (GT (ID "p" 8) (INT 99 8)))
+                (CALL (ID "print" 9) ((ID "x" 9) (ID "y" 9))))) )))
 
 (define (test-all)
   (test-match-primary)
@@ -568,4 +641,6 @@
   (test-match-assignment-or-procedure-call)
   (test-match-statement)
   (test-match-statement-list)
-  (test-match-if-statement))
+  (test-match-if-statement)
+  (test-match-while-do)
+  (test-match-repeat-until))
