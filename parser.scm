@@ -636,6 +636,70 @@
                  (GT (ID "p" 8) (INT 99 8)))
                 (CALL (ID "print" 9) ((ID "x" 9) (ID "y" 9))))))))
 
+;;; ident-list = ID {"," ID}.
+(define (match-id-list lexer token)
+  (parse-trace "match-id-list" token)
+  (if (eq? 'ID (car token))
+      (let loop ((t (get-token lexer)) (id-list (list token)))
+        (if (eq? 'COMMA (car t))
+            (let ((id (get-token lexer)))
+              (if (eq? 'ID (car id))
+                  (loop (get-token lexer) (cons id id-list))
+                  (parse-error id "Expected ID")))
+            (begin
+              (unget-token lexer t)
+              (reverse id-list))))
+      (parse-error token "Expected ID")))
+
+(define (test-match-id-list)
+  (test-run "match-id-list" match-id-list
+            '(("hello" ((ID "hello" 1)))
+              ("hello, world" ((ID "hello" 1) (ID "world" 1)))
+              ("a,b,c,d" ((ID "a" 1) (ID "b" 1) (ID "c" 1) (ID "d" 1))))))
+
+;;; type = ID | array-type | record-type.
+(define (match-type lexer token)
+  (parse-trace "match-type" token)
+  (if (eq? 'ID (car token))
+      (cons 'TYPE (cdr token))
+      (let ((array (match-array-type lexer token)))
+        (if array
+            array
+            ;; TODO - add records
+            (parse-error token "Bad type")))))
+
+(define (test-match-type)
+  (test-run "match-type" match-type
+            '(("integer" (TYPE "integer" 1))
+              ("string" (TYPE "string" 1))
+              ("array 10 of integer" (ARRAY (TYPE "integer" 1) (INT 10 1)))
+              ("array 10 of array 4 of integer" (ARRAY (ARRAY (TYPE "integer" 1) (INT 4 1)) (INT 10 1))))))
+
+;;; array-type = ARRAY expr OF type.
+(define (match-array-type lexer token)
+  (parse-trace "match-array-type" token)
+  (if (eq? 'ARRAY (car token))
+      (let ((e (match-expr lexer (get-token lexer))))
+        (if e
+            (let ((t (get-token lexer)))
+              (if (eq? 'OF (car t))
+                  (let ((type (match-type lexer (get-token lexer))))
+                    (if type
+                        (list 'ARRAY type e)
+                        #f))
+                  (parse-error t "Expected OF")))
+            #f))
+      #f))
+
+;;; field-list = [ident-list COLON type].
+;;; record-type = RECORD field-list {SEMICOLON field-list} END.
+;;; var-declaration = VAR {ident-list: type SEMICOLON}
+;;; type-declaration = [TYPE {ID EQ type SEMICOLON}]
+
+;;; TODO
+;;; procedure-declaration
+;;; module
+
 (define (test-all)
   (test-match-primary)
   (test-match-unary)
@@ -649,4 +713,6 @@
   (test-match-statement-list)
   (test-match-if-statement)
   (test-match-while-do)
-  (test-match-repeat-until))
+  (test-match-repeat-until)
+  (test-match-id-list)
+  (test-match-type))
