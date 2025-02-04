@@ -636,7 +636,7 @@
                  (GT (ID "p" 8) (INT 99 8)))
                 (CALL (ID "print" 9) ((ID "x" 9) (ID "y" 9))))))))
 
-;;; ident-list = ID {"," ID}.
+;;; id-list = ID {"," ID}.
 (define (match-id-list lexer token)
   (parse-trace "match-id-list" token)
   (if (eq? 'ID (car token))
@@ -665,8 +665,10 @@
       (let ((array (match-array-type lexer token)))
         (if array
             array
-            ;; TODO - add records
-            (parse-error token "Bad type")))))
+            (let ((record (match-record-type lexer token)))
+              (if record
+                  record
+                  (parse-error token "Bad type")))))))
 
 (define (test-match-type)
   (test-run "match-type" match-type
@@ -691,8 +693,61 @@
             #f))
       #f))
 
-;;; field-list = [ident-list COLON type].
+;;; field-list = [id-list COLON type].
+(define (match-field-list lexer token)
+  (parse-trace token "match-field-list")
+  (let ((ids (match-id-list lexer token)))
+    (if ids
+        (let ((t (get-token lexer)))
+          (if (eq? 'COLON (car t))
+              (let ((type (match-type lexer (get-token lexer))))
+                (if type
+                    (list 'FIELDS type ids)
+                    #f))
+              (parse-error t "Expected :")))
+        #f)))
+
+(define (test-match-field-list)
+  (test-run "match-field-list" match-field-list
+            '(("a: integer" (FIELDS (TYPE "integer" 1) ((ID "a" 1))))
+              ("a,b: integer" (FIELDS (TYPE "integer" 1) ((ID "a" 1) (ID "b" 1))))
+              ("a,b,c: array 10 of integer" (FIELDS (ARRAY (TYPE "integer" 1) (INT 10 1)) ((ID "a" 1) (ID "b" 1) (ID "c" 1)))))))
+                    
 ;;; record-type = RECORD field-list {SEMICOLON field-list} END.
+(define (match-record-type lexer token)
+  (parse-trace token "match-record-type")
+  (if (eq? 'RECORD (car token))
+      (let ((fields (match-field-list lexer (get-token lexer))))
+        (if fields
+            (let loop ((t (get-token lexer)) (flist (list fields)))
+              (if (eq? 'SEMICOLON (car t))
+                  (let ((f (match-field-list lexer (get-token lexer))))
+                    (if f
+                        (loop (get-token lexer) (cons f flist))
+                        #f))
+                  (if (eq? 'END (car t))
+                      (list 'RECORD (reverse flist))
+                      (parse-error t "expected END"))))
+            #f))
+      #f))
+
+(define (test-match-record-type)
+  (test-run "match-record-type" match-record-type
+            '(("record\n  a: integer;\n  b: string\nend"
+               (RECORD
+                ((FIELDS (TYPE "integer" 2) ((ID "a" 2)))
+                 (FIELDS (TYPE "string" 3) ((ID "b" 3))))))
+              ("record\n  a,b: integer;\n  c: array 10 of char\nend"
+               (RECORD
+                ((FIELDS (TYPE "integer" 2) ((ID "a" 2) (ID "b" 2)))
+                 (FIELDS (ARRAY (TYPE "char" 3) (INT 10 3)) ((ID "c" 3))))))
+              ("record\n  a: record\n    b: integer;\n    c: char\n  end;\n  d: integer;\n  e: string\nend"
+               (RECORD
+                ((FIELDS (RECORD
+                          ((FIELDS (TYPE "integer" 3) ((ID "b" 3))) (FIELDS (TYPE "char" 4) ((ID "c" 4)))))
+                         ((ID "a" 2)))
+                 (FIELDS (TYPE "integer" 6) ((ID "d" 6))) (FIELDS (TYPE "string" 7) ((ID "e" 7)))))))))
+
 ;;; var-declaration = VAR {ident-list: type SEMICOLON}
 ;;; type-declaration = [TYPE {ID EQ type SEMICOLON}]
 
@@ -715,4 +770,6 @@
   (test-match-while-do)
   (test-match-repeat-until)
   (test-match-id-list)
-  (test-match-type))
+  (test-match-type)
+  (test-match-field-list)
+  (test-match-record-type))
