@@ -649,7 +649,7 @@
             (begin
               (unget-token lexer t)
               (reverse id-list))))
-      (parse-error token "Expected ID")))
+      #f))
 
 (define (test-match-id-list)
   (test-run "match-id-list" match-id-list
@@ -695,7 +695,7 @@
 
 ;;; field-list = [id-list COLON type].
 (define (match-field-list lexer token)
-  (parse-trace token "match-field-list")
+  (parse-trace "match-field-list" token)
   (let ((ids (match-id-list lexer token)))
     (if ids
         (let ((t (get-token lexer)))
@@ -705,7 +705,7 @@
                     (list 'FIELDS type ids)
                     #f))
               (parse-error t "Expected :")))
-        #f)))
+        (parse-error token "Expected ID"))))
 
 (define (test-match-field-list)
   (test-run "match-field-list" match-field-list
@@ -748,8 +748,72 @@
                          ((ID "a" 2)))
                  (FIELDS (TYPE "integer" 6) ((ID "d" 6))) (FIELDS (TYPE "string" 7) ((ID "e" 7)))))))))
 
-;;; var-declaration = VAR {ident-list: type SEMICOLON}
+;;; var-declaration = VAR {ident-list COLON type SEMICOLON}
+(define (match-var-declaration lexer token)
+  (parse-trace "match-var-declaration" token)
+  (if (eq? 'VAR (car token))
+      (let loop ((ids (match-id-list lexer (get-token lexer))) (vars '()))
+        (if ids
+            (let ((t (get-token lexer)))
+              (if (eq? 'COLON (car t))
+                  (let ((type (match-type lexer (get-token lexer))))
+                    (if type
+                        (let ((ts (get-token lexer)))
+                          (if (eq? 'SEMICOLON (car ts))
+                              (loop (match-id-list lexer (get-token lexer)) (cons (list type ids) vars))
+                              (parse-error ts "Expected ;")))
+                        #f))
+                  (parse-error t "Expected :")))
+            (cons 'VAR (reverse vars))))
+      #f))
+
+(define (test-match-var-declaration)
+ (test-run "match-var-declaration" match-var-declaration
+           '(("var x: integer;"
+              (VAR ((TYPE "integer" 1) ((ID "x" 1)))))
+             ("var x,y: integer;"
+              (VAR ((TYPE "integer" 1) ((ID "x" 1) (ID "y" 1)))))
+             ("var x: integer;\n  y: string;"
+              (VAR ((TYPE "integer" 1) ((ID "x" 1)))
+                   ((TYPE "string" 2) ((ID "y" 2)))))
+             ("var z: array 10 of integer;\n  a,b: integer;"
+              (VAR ((ARRAY (TYPE "integer" 1) (INT 10 1)) ((ID "z" 1)))
+                   ((TYPE "integer" 2) ((ID "a" 2) (ID "b" 2)))))
+             ("var a: record\n  x:integer;\n  y: array 9 of char\nend; b: string;"
+              (VAR ((RECORD ((FIELDS (TYPE "integer" 2) ((ID "x" 2)))
+                             (FIELDS (ARRAY (TYPE "char" 3) (INT 9 3)) ((ID "y" 3))))) ((ID "a" 1)))
+                   ((TYPE "string" 4) ((ID "b" 4))))))))
+
 ;;; type-declaration = [TYPE {ID EQ type SEMICOLON}]
+(define (match-type-declaration lexer token)
+  (parse-trace "match-type-declaration" token)
+  (if (eq? 'TYPE (car token))
+      (let loop ((id (get-token lexer)) (tlist '()))
+        (if (eq? 'ID (car id))
+            (let ((eq (get-token lexer)))
+              (if (eq? 'EQ (car eq))
+                  (let ((type (match-type lexer (get-token lexer))))
+                    (if type
+                        (let ((sc (get-token lexer)))
+                          (if (eq? 'SEMICOLON (car sc))
+                              (loop (get-token lexer) (cons (list id type) tlist))
+                              (parse-error sc "Expected ;")))
+                        #f))
+                  (parse-error eq "Expected =")))
+            (cons 'TYPEDEF (reverse tlist))))
+      #f))
+
+(define (test-match-type-declaration)
+  (test-run "match-type-declaration" match-type-declaration
+            '(("type name = array 10 of char;"
+               (TYPEDEF ((ID "name" 1) (ARRAY (TYPE "char" 1) (INT 10 1)))))
+              ("type point = record x, y: integer end;"
+               (TYPEDEF ((ID "point" 1) (RECORD ((FIELDS (TYPE "integer" 1) ((ID "x" 1) (ID "y" 1))))))))
+              ("type point = record x, y: integer end;\n  name = array 32 of char;"
+               (TYPEDEF ((ID "point" 1) (RECORD ((FIELDS (TYPE "integer" 1) ((ID "x" 1) (ID "y" 1))))))
+                        ((ID "name" 2) (ARRAY (TYPE "char" 2) (INT 32 2)))))
+              ("type myint = integer;"
+               (TYPEDEF ((ID "myint" 1) (TYPE "integer" 1)))))))
 
 ;;; TODO
 ;;; procedure-declaration
@@ -772,4 +836,6 @@
   (test-match-id-list)
   (test-match-type)
   (test-match-field-list)
-  (test-match-record-type))
+  (test-match-record-type)
+  (test-match-var-declaration)
+  (test-match-type-declaration))
