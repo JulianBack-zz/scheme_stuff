@@ -716,7 +716,7 @@
                     
 ;;; record-type = RECORD field-list {SEMICOLON field-list} END.
 (define (match-record-type lexer token)
-  (parse-trace token "match-record-type")
+  (parse-trace "match-record-type" token)
   (if (eq? 'RECORD (car token))
       (let ((fields (match-field-list lexer (get-token lexer))))
         (if fields
@@ -851,6 +851,33 @@
                 ((ID "z" 3) (DIV (CALL (ID "sqrt" 3) ((ID "y" 3))) (INT 3 3))))))))
 
 ;;; fp-section = [VAR] id-list COLON type
+(define (match-fp-section lexer token)
+  (parse-trace "match-fp-section" token)
+  (define (match-fp-section2 lexer token)
+    (let ((id-list (match-id-list lexer token)))
+      (if id-list
+          (let ((col (get-token lexer)))
+            (if (eq? 'COLON (car col))
+                (let ((type (match-type lexer (get-token lexer))))
+                  (if type
+                      (list type id-list)
+                      #f))
+                (parse-error col "Expected :")))
+          #f)))
+  (if (eq? 'VAR (car token))
+      (let ((fp (match-fp-section2 lexer (get-token lexer))))
+        (if fp
+            (cons 'VAR fp)
+            #f))
+      (match-fp-section2 lexer token)))
+
+(define (test-match-fp-section)
+  (test-run "match-fp-section" match-fp-section
+            '(("i: integer" ((TYPE "integer" 1) ((ID "i" 1))))
+              ("var i: integer" (VAR (TYPE "integer" 1) ((ID "i" 1))))
+              ("i, j: integer" ((TYPE "integer" 1) ((ID "i" 1) (ID "j" 1))))
+              ("var i, j: integer" (VAR (TYPE "integer" 1) ((ID "i" 1) (ID "j" 1)))))))
+
 ;;; formal-parameters = OPEN [fp-section {";" fp-section}] CLOSE
 ;;; procedure-heading = PROCEDURE ID [formal-parameters]
 ;;; procedure-body = declarations [BEGIN statements] END ID
@@ -878,4 +905,5 @@
   (test-match-record-type)
   (test-match-var-declaration)
   (test-match-type-declaration)
-  (test-match-const-declaration))
+  (test-match-const-declaration)
+  (test-match-fp-section))
