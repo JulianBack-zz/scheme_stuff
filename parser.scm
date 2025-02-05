@@ -17,11 +17,12 @@
 ;;; 4. DONE function calls
 ;;; 5. DONE statements: assignment, IF, WHILE, REPEAT, procedure call
 ;;; 6. DONE Strings in expressions
-;;; 8. Add variable declarations
+;;; 8. DONE Add variable declarations
 ;;; 8. Add procedure declarations
-;;; 9. Add type declarations
-;;; 10. Add const declarations
+;;; 9. DONE Add type declarations
+;;; 10. DONE Add const declarations
 ;;; 11. Add Module statement
+;;; 12. Refactor?  Use macros to shorten code?  Put tests in separate file?
 
 (import (chicken format))
 
@@ -815,9 +816,47 @@
               ("type myint = integer;"
                (TYPEDEF ((ID "myint" 1) (TYPE "integer" 1)))))))
 
-;;; TODO
-;;; procedure-declaration
-;;; module
+;;; const-declaration = CONST {ID EQ expr SEMICOLON}
+(define (match-const-declaration lexer token)
+  (parse-trace "match-const-declaration" token)
+  (if (eq? 'CONST (car token))
+      (let loop ((id (get-token lexer)) (clist '()))
+        (if (eq? 'ID (car id))
+            (let ((eq (get-token lexer)))
+              (if (eq? 'EQ (car eq))
+                  (let ((expr (match-expr lexer (get-token lexer))))
+                    (if expr
+                        (let ((sc (get-token lexer)))
+                          (if (eq? 'SEMICOLON (car sc))
+                              (loop (get-token lexer) (cons (list id expr) clist))
+                              (parse-error sc "Expected ;")))
+                        #f))
+                  (parse-error eq "Expected =")))
+            (cons 'CONST (reverse clist))))
+      #f))
+
+(define (test-match-const-declaration)
+  (test-run "match-const-declaration" match-const-declaration
+            '(("const x = 42;"
+               (CONST
+                ((ID "x" 1) (INT 42 1))))
+              ("const x = 42;\n  y = x * 99;"
+               (CONST
+                ((ID "x" 1) (INT 42 1))
+                ((ID "y" 2) (MUL (ID "x" 2) (INT 99 2)))))
+              ("const x = 42;\n  y = sin(x);\n  z = sqrt(y) / 3;"
+               (CONST
+                ((ID "x" 1) (INT 42 1))
+                ((ID "y" 2) (CALL (ID "sin" 2) ((ID "x" 2))))
+                ((ID "z" 3) (DIV (CALL (ID "sqrt" 3) ((ID "y" 3))) (INT 3 3))))))))
+
+;;; fp-section = [VAR] id-list COLON type
+;;; formal-parameters = OPEN [fp-section {";" fp-section}] CLOSE
+;;; procedure-heading = PROCEDURE ID [formal-parameters]
+;;; procedure-body = declarations [BEGIN statements] END ID
+;;; procedure-declaration = procedure-heading SEMICOLON procedure-body.
+;;; declarations = [const-declaration] [type-declaration] [var-declaration] {ProcedureDeclaration SEMICOLON}
+;;; module = MODULE ID SEMICOLON declarations [BEGIN statements] END ID DOT 
 
 (define (test-all)
   (test-match-primary)
@@ -838,4 +877,5 @@
   (test-match-field-list)
   (test-match-record-type)
   (test-match-var-declaration)
-  (test-match-type-declaration))
+  (test-match-type-declaration)
+  (test-match-const-declaration))
