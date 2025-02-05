@@ -878,7 +878,39 @@
               ("i, j: integer" ((TYPE "integer" 1) ((ID "i" 1) (ID "j" 1))))
               ("var i, j: integer" (VAR (TYPE "integer" 1) ((ID "i" 1) (ID "j" 1)))))))
 
-;;; formal-parameters = OPEN [fp-section {";" fp-section}] CLOSE
+;;; formal-parameters = OPEN [fp-section {SEMICOLON fp-section}] CLOSE
+(define (match-formal-parameters lexer token)
+  (parse-trace "match-formal-parameters" token)
+  (if (eq? 'OPEN (car token))
+      (let loop ((t (get-token lexer)) (fp-list '()))
+        (let ((fp-sect (match-fp-section lexer t)))
+          (if fp-sect
+              (let ((sc (get-token lexer)))
+                (if (eq? 'SEMICOLON (car sc))
+                    (loop (get-token lexer) (cons fp-sect fp-list))
+                    (if (eq? 'CLOSE (car sc))
+                        (reverse (cons fp-sect fp-list))
+                        (parse-error "Expected )" sc))))
+              (if (eq? 'CLOSE (car t))
+                  (reverse fp-list)
+                  (parse-error "Expected )" t)))))
+      (parse-error "Expected (" token)))
+
+(define (test-match-formal-parameters)
+  (test-run "match-formal-parameters" match-formal-parameters
+            '(("()" ())
+              ("(i: integer)" (((TYPE "integer" 1) ((ID "i" 1)))))
+              ("(i,j: integer; s: string)"
+               (((TYPE "integer" 1) ((ID "i" 1) (ID "j" 1)))
+                ((TYPE "string" 1) ((ID "s" 1)))))
+              ("(i,j: integer; var b: array 10 of integer)"
+               (((TYPE "integer" 1) ((ID "i" 1) (ID "j" 1)))
+                (VAR (ARRAY (TYPE "integer" 1) (INT 10 1)) ((ID "b" 1)))))
+              ("(i,j: integer; b: array 10 of integer; var c: record x, y: integer end)"
+               (((TYPE "integer" 1) ((ID "i" 1) (ID "j" 1)))
+                ((ARRAY (TYPE "integer" 1) (INT 10 1)) ((ID "b" 1)))
+                (VAR (RECORD ((FIELDS (TYPE "integer" 1) ((ID "x" 1) (ID "y" 1))))) ((ID "c" 1))))))))
+
 ;;; procedure-heading = PROCEDURE ID [formal-parameters]
 ;;; procedure-body = declarations [BEGIN statements] END ID
 ;;; procedure-declaration = procedure-heading SEMICOLON procedure-body.
@@ -906,4 +938,5 @@
   (test-match-var-declaration)
   (test-match-type-declaration)
   (test-match-const-declaration)
-  (test-match-fp-section))
+  (test-match-fp-section)
+  (test-match-formal-parameters))
