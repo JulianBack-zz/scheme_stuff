@@ -23,6 +23,7 @@
 ;;; 10. DONE Add const declarations
 ;;; 11. Add Module statement
 ;;; 12. Refactor?  Use macros to shorten code?  Put tests in separate file?
+;;; 13. Syntax doesn't allow for procedure return values.
 
 (import (chicken format))
 
@@ -893,8 +894,8 @@
                         (parse-error "Expected )" sc))))
               (if (eq? 'CLOSE (car t))
                   (reverse fp-list)
-                  (parse-error "Expected )" t)))))
-      (parse-error "Expected (" token)))
+                  (parse-error t "Expected )")))))
+      #f))
 
 (define (test-match-formal-parameters)
   (test-run "match-formal-parameters" match-formal-parameters
@@ -912,6 +913,29 @@
                 (VAR (RECORD ((FIELDS (TYPE "integer" 1) ((ID "x" 1) (ID "y" 1))))) ((ID "c" 1))))))))
 
 ;;; procedure-heading = PROCEDURE ID [formal-parameters]
+(define (match-procedure-heading lexer token)
+  (parse-trace "match-procedure-heading" token)
+  (if (eq? 'PROCEDURE (car token))
+      (let ((id (get-token lexer)))
+        (if (eq? 'ID (car id))
+            (let ((fp (match-formal-parameters lexer (get-token lexer))))
+              (if fp
+                  (list 'PROCEDURE id fp)
+                  (list 'PROCEDURE id '())))
+            (parse-error id "Expected procedure id")))
+      #f))
+
+(define (test-match-procedure-heading)
+  (test-run "match-procedure-heading" match-procedure-heading
+            '(("procedure hello"
+               (PROCEDURE (ID "hello" 1) ()))
+              ("procedure add(a, b: integer)"
+               (PROCEDURE (ID "add" 1) (((TYPE "integer" 1) ((ID "a" 1) (ID "b" 1))))))
+              ("procedure add2(a,b: integer; var d: integer)"
+               (PROCEDURE (ID "add2" 1)
+                          (((TYPE "integer" 1) ((ID "a" 1) (ID "b" 1)))
+                           (VAR (TYPE "integer" 1) ((ID "d" 1)))))))))
+
 ;;; procedure-body = declarations [BEGIN statements] END ID
 ;;; procedure-declaration = procedure-heading SEMICOLON procedure-body.
 ;;; declarations = [const-declaration] [type-declaration] [var-declaration] {ProcedureDeclaration SEMICOLON}
@@ -939,4 +963,5 @@
   (test-match-type-declaration)
   (test-match-const-declaration)
   (test-match-fp-section)
-  (test-match-formal-parameters))
+  (test-match-formal-parameters)
+  (test-match-procedure-heading))
