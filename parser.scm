@@ -21,11 +21,13 @@
 ;;; 8. DONE Add procedure declarations
 ;;; 9. DONE Add type declarations
 ;;; 10. DONE Add const declarations
-;;; 11. Add Module statement
+;;; 11. DONE Add Module statement
 ;;; 12. Refactor?  Use macros to shorten code?  Put tests in separate file?
 ;;; 13. Syntax doesn't allow for procedure return values.
 ;;; 14. Floating point?
 ;;; 15. Parse from a file for longer tests.
+;;; 16. IMPORT and EXPORT statements
+;;; 17. Public markers
 
 (import (chicken format))
 
@@ -1081,7 +1083,45 @@
                 (TYPEDEF ((ID "name" 2) (ARRAY (TYPE "char" 2) (INT 32 2))))
                 (VAR ((TYPE "integer" 3) ((ID "a" 3)))) ())))))
 
-;;; module = MODULE ID SEMICOLON declarations [BEGIN statements] END ID DOT 
+;;; module = MODULE ID SEMICOLON declarations [BEGIN statements] END ID DOT
+;;; anything after the . is ignored
+(define (match-module lexer token)
+  (parse-trace "match-module" token)
+  (if (eq? 'MODULE (car token))
+      (let ((id (get-token lexer)))
+        (if (eq? 'ID (car id))
+            (let ((sc (get-token lexer)))
+              (if (eq? 'SEMICOLON (car sc))
+                  (let ((decl (match-declarations lexer (get-token lexer))))
+                    (if decl
+                        (let ((t (get-token lexer)))
+                          (let ((stats (if (eq? 'BEGIN (car t))
+                                           (match-statement-list lexer (get-token lexer))
+                                           (begin
+                                             (unget-token lexer t)
+                                             '()))))
+                            (let ((et (get-token lexer)))
+                              (if (eq? 'END (car et))
+                                  (let ((id2 (get-token lexer)))
+                                    (if (eq? 'ID (car id2))
+                                        (let ((dt (get-token lexer)))
+                                          (if (eq? 'DOT (car dt))
+                                              (list 'MODULE id id2 decl stats)
+                                              (parse-error dt "Expected .")))
+                                        (parse-error id2 "Expected module ID")))
+                                  (parse-error et "Expected END")))))
+                        #f))
+                  (parse-error sc "Expected ;")))
+            (parse-error id "Expected module ID")))
+      (parse-error token "Expected MODULE")))
+
+(define (test-match-module)
+  (test-run "match-module" match-module
+            '(("module hello;\nbegin\n  print(\"Hello world\") end hello."
+               (MODULE (ID "hello" 1)
+                       (ID "hello" 3)
+                       (#f #f #f ())
+                       ((CALL (ID "print" 3) ((STRING "Hello world" 3)))))))))
 
 (define (test-all)
   (test-match-primary)
@@ -1109,4 +1149,5 @@
   (test-match-procedure-heading)
   (test-match-declarations)
   (test-match-procedure-body)
-  (test-match-procedure-declaration))
+  (test-match-procedure-declaration)
+  (test-match-module))
