@@ -32,6 +32,9 @@
 (define (make-lexer-from-file filename)
   (make-lexer (open-input-file filename) '() 1 filename))
 
+(define (close-lexer lexer)
+  (close-input-port (lexer-get-port lexer)))
+
 ;;; Reserved words
 (define *reserved-words*
   (alist->hash-table '(("var" VAR)

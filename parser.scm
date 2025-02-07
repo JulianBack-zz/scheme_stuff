@@ -1151,3 +1151,9 @@
   (test-match-procedure-body)
   (test-match-procedure-declaration)
   (test-match-module))
+
+(define (parse-file filename)
+  (let ((lexer (make-lexer-from-file filename)))
+    (let ((result (match-module lexer (get-token lexer))))
+      (close-lexer lexer)
+      result)))
