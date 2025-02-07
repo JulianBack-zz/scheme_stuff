@@ -18,12 +18,14 @@
 ;;; 5. DONE statements: assignment, IF, WHILE, REPEAT, procedure call
 ;;; 6. DONE Strings in expressions
 ;;; 8. DONE Add variable declarations
-;;; 8. Add procedure declarations
+;;; 8. DONE Add procedure declarations
 ;;; 9. DONE Add type declarations
 ;;; 10. DONE Add const declarations
 ;;; 11. Add Module statement
 ;;; 12. Refactor?  Use macros to shorten code?  Put tests in separate file?
 ;;; 13. Syntax doesn't allow for procedure return values.
+;;; 14. Floating point?
+;;; 15. Parse from a file for longer tests.
 
 (import (chicken format))
 
@@ -754,19 +756,23 @@
 (define (match-var-declaration lexer token)
   (parse-trace "match-var-declaration" token)
   (if (eq? 'VAR (car token))
-      (let loop ((ids (match-id-list lexer (get-token lexer))) (vars '()))
-        (if ids
-            (let ((t (get-token lexer)))
-              (if (eq? 'COLON (car t))
-                  (let ((type (match-type lexer (get-token lexer))))
-                    (if type
-                        (let ((ts (get-token lexer)))
-                          (if (eq? 'SEMICOLON (car ts))
-                              (loop (match-id-list lexer (get-token lexer)) (cons (list type ids) vars))
-                              (parse-error ts "Expected ;")))
-                        #f))
-                  (parse-error t "Expected :")))
-            (cons 'VAR (reverse vars))))
+      (let loop ((idt (get-token lexer)) (vars '()))
+        ;(display "var loop ") (write idt) (newline) (write vars) (newline)
+        (let ((ids (match-id-list lexer idt)))
+          (if ids
+              (let ((t (get-token lexer)))
+                (if (eq? 'COLON (car t))
+                    (let ((type (match-type lexer (get-token lexer))))
+                      (if type
+                          (let ((ts (get-token lexer)))
+                            (if (eq? 'SEMICOLON (car ts))
+                                (loop (get-token lexer) (cons (list type ids) vars))
+                                (parse-error ts "Expected ;")))
+                          #f))
+                    (parse-error t "Expected :")))
+              (begin
+                (unget-token lexer idt)
+                (cons 'VAR (reverse vars))))))
       #f))
 
 (define (test-match-var-declaration)
@@ -781,10 +787,10 @@
              ("var z: array 10 of integer;\n  a,b: integer;"
               (VAR ((ARRAY (TYPE "integer" 1) (INT 10 1)) ((ID "z" 1)))
                    ((TYPE "integer" 2) ((ID "a" 2) (ID "b" 2)))))
-             ("var a: record\n  x:integer;\n  y: array 9 of char\nend; b: string;"
+             ("var a: record\n  x:integer;\n  y: array 9 of char\nend;\nb: string;"
               (VAR ((RECORD ((FIELDS (TYPE "integer" 2) ((ID "x" 2)))
                              (FIELDS (ARRAY (TYPE "char" 3) (INT 9 3)) ((ID "y" 3))))) ((ID "a" 1)))
-                   ((TYPE "string" 4) ((ID "b" 4))))))))
+                   ((TYPE "string" 5) ((ID "b" 5))))))))
 
 ;;; type-declaration = [TYPE {ID EQ type SEMICOLON}]
 (define (match-type-declaration lexer token)
@@ -802,7 +808,9 @@
                               (parse-error sc "Expected ;")))
                         #f))
                   (parse-error eq "Expected =")))
-            (cons 'TYPEDEF (reverse tlist))))
+            (begin
+              (unget-token lexer id)
+              (cons 'TYPEDEF (reverse tlist)))))
       #f))
 
 (define (test-match-type-declaration)
@@ -833,7 +841,9 @@
                               (parse-error sc "Expected ;")))
                         #f))
                   (parse-error eq "Expected =")))
-            (cons 'CONST (reverse clist))))
+            (begin
+              (unget-token lexer id)
+              (cons 'CONST (reverse clist)))))
       #f))
 
 (define (test-match-const-declaration)
@@ -937,8 +947,140 @@
                            (VAR (TYPE "integer" 1) ((ID "d" 1)))))))))
 
 ;;; procedure-body = declarations [BEGIN statements] END ID
-;;; procedure-declaration = procedure-heading SEMICOLON procedure-body.
-;;; declarations = [const-declaration] [type-declaration] [var-declaration] {ProcedureDeclaration SEMICOLON}
+(define (match-procedure-body lexer token)
+  (parse-trace "match-procedure-body" token)
+  (let ((decl (if (eq? 'BEGIN (car token))
+                  (begin (unget-token lexer token) '())
+                  (if (eq? 'END (car token))
+                      (begin (unget-token lexer token) '())
+                      (match-declarations lexer token)))))
+    (if decl
+        (let ((t (get-token lexer)))
+          ;;(display "mpb1 ") (write t) (newline)
+          (let ((stats (if (eq? 'BEGIN (car t))
+                           (match-statement-list lexer (get-token lexer))
+                           (begin
+                             (unget-token lexer t)
+                             '()))))
+            (let ((et (get-token lexer)))
+              ;;(display "mpb2 ") (write et) (newline)
+              (if (eq? 'END (car et))
+                  (let ((it (get-token lexer)))
+                    ;;(display "mpb3 ") (write it) (newline)
+                    (if (eq? 'ID (car it))
+                        (list it decl stats)
+                        (parse-error it "Expected procedure ID")))
+                  (parse-error et "Expected END")))))
+        #f)))
+
+(define (test-match-procedure-body)
+  (test-run "match-procedure-body" match-procedure-body
+            '(("end test"
+               ((ID "test" 1) () ()))
+              ("begin\n  a := a + 1\nend test"
+               ((ID "test" 3) () ((ASSIGN (ID "a" 2) (ADD (ID "a" 2) (INT 1 2))))))
+              ("var a: integer;\nbegin\n  a := a + 1\nend test"
+               ((ID "test" 4)
+                (#f
+                 #f
+                 (VAR ((TYPE "integer" 1) ((ID "a" 1))))
+                 ())
+                ((ASSIGN (ID "a" 3) (ADD (ID "a" 3) (INT 1 3))))))
+              ("const x = 12;\nvar a: integer;\nbegin\n  a := a + x\nend test"
+               ((ID "test" 5)
+                ((CONST ((ID "x" 1) (INT 12 1)))
+                 #f
+                 (VAR ((TYPE "integer" 2) ((ID "a" 2))))
+                 ())
+                ((ASSIGN (ID "a" 4) (ADD (ID "a" 4) (ID "x" 4))))))
+              ("const x = 12;\ntype name = array 32 of char;\nvar a: integer;\nbegin\n  a := a + x;\n  print(name)\nend test"
+               ((ID "test" 7)
+                ((CONST ((ID "x" 1) (INT 12 1)))
+                 (TYPEDEF ((ID "name" 2) (ARRAY (TYPE "char" 2) (INT 32 2))))
+                 (VAR ((TYPE "integer" 3) ((ID "a" 3))))
+                 ())
+                ((ASSIGN (ID "a" 5) (ADD (ID "a" 5) (ID "x" 5))) (CALL (ID "print" 6) ((ID "name" 6)))))))))
+
+;;; procedure-declaration = procedure-heading SEMICOLON procedure-body SEMICOLON
+(define (match-procedure-declaration lexer token)
+  (parse-trace "match-procedure-declaration" token)
+  (let ((heading (match-procedure-heading lexer token)))
+    (if heading
+        (let ((t (get-token lexer)))
+          (if (eq? 'SEMICOLON (car t))
+              (let ((body (match-procedure-body lexer (get-token lexer))))
+                (if body
+                    (let ((t (get-token lexer)))
+                      (if (eq? 'SEMICOLON (car t))
+                          (cons heading body)
+                          (parse-error t "Expected ;")))
+                    #f))
+              (parse-error t "Expected ;")))
+        #f)))
+
+(define (test-match-procedure-declaration)
+  (test-run "match-procedure-declaration" match-procedure-declaration
+            '(("procedure add(a, b: integer; var result: integer);\nbegin\n  result := a + b\nend add;"
+               ((PROCEDURE
+                 (ID "add" 1)
+                 (((TYPE "integer" 1) ((ID "a" 1) (ID "b" 1))) (VAR (TYPE "integer" 1) ((ID "result" 1)))))
+                (ID "add" 4)
+                ()
+                ((ASSIGN (ID "result" 3) (ADD (ID "a" 3) (ID "b" 3)))))))))
+
+;;; declarations = [const-declaration] [type-declaration] [var-declaration] {ProcedureDeclaration}
+(define (match-declarations lexer token)
+  (parse-trace "match-declarations" token)
+  (let ((cd (match-const-declaration lexer token)))
+    (let ((tt (if cd (get-token lexer) token)))
+      (let ((td (match-type-declaration lexer tt)))
+        (let ((tv (if td (get-token lexer) tt)))
+          (let ((vd (match-var-declaration lexer tv)))
+            (let ((tp (if vd (get-token lexer) tv)))
+              (let loop ((pd (match-procedure-declaration lexer tp)) (p-list '()))
+                (if pd
+                    (loop (match-procedure-declaration lexer (get-token lexer)) (cons pd p-list))
+                    (begin
+                      (unget-token lexer tp)
+                      (list cd td vd (reverse p-list))))))))))))
+
+(define (test-match-declarations)
+  (test-run "match-declarations" match-declarations
+            '((""
+               (#f
+                #f
+                #f
+                ()))
+              ("const x = 12;"
+               ((CONST ((ID "x" 1) (INT 12 1)))
+                #f
+                #f
+                ()))
+              ("type name = array 32 of char;"
+               (#f
+                (TYPEDEF ((ID "name" 1) (ARRAY (TYPE "char" 1) (INT 32 1))))
+                #f
+                ()))
+              ("var a: integer;"
+               (#f
+                #f
+                (VAR ((TYPE "integer" 1) ((ID "a" 1))))
+                ()))
+              ("const x = 12;\ntype name = array 32 of char;"
+               ((CONST ((ID "x" 1) (INT 12 1)))
+                (TYPEDEF ((ID "name" 2) (ARRAY (TYPE "char" 2) (INT 32 2))))
+                #f
+                ()))
+              ("const x = 12;\nvar a: integer;"
+               ((CONST ((ID "x" 1) (INT 12 1)))
+                #f
+                (VAR ((TYPE "integer" 2) ((ID "a" 2))))
+                ()))
+              ("const x = 12;\ntype name = array 32 of char;\nvar a: integer;"
+               ((CONST ((ID "x" 1) (INT 12 1)))
+                (TYPEDEF ((ID "name" 2) (ARRAY (TYPE "char" 2) (INT 32 2))))
+                (VAR ((TYPE "integer" 3) ((ID "a" 3)))) ())))))
+
 ;;; module = MODULE ID SEMICOLON declarations [BEGIN statements] END ID DOT 
 
 (define (test-all)
@@ -964,4 +1106,7 @@
   (test-match-const-declaration)
   (test-match-fp-section)
   (test-match-formal-parameters)
-  (test-match-procedure-heading))
+  (test-match-procedure-heading)
+  (test-match-declarations)
+  (test-match-procedure-body)
+  (test-match-procedure-declaration))
