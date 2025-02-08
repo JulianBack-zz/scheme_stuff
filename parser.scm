@@ -22,10 +22,10 @@
 ;;; 9. DONE Add type declarations
 ;;; 10. DONE Add const declarations
 ;;; 11. DONE Add Module statement
-;;; 12. Refactor?  Use macros to shorten code?  Put tests in separate file?
+;;; 12. Refactor?  Use macros to shorten code?  Put tests in separate file?  Partially done.
 ;;; 13. Syntax doesn't allow for procedure return values.
 ;;; 14. Floating point?
-;;; 15. Parse from a file for longer tests.
+;;; 15. DONE Parse from a file for longer tests.
 ;;; 16. IMPORT and EXPORT statements
 ;;; 17. Public markers
 
@@ -102,18 +102,33 @@
         (display obj)
         (newline))))
 
+;;; Get the type of a token
+(define-syntax get-token-type
+  (syntax-rules ()
+    ((get-token-type token) (car token))))
+
+;;; Match an ID against a token
+(define-syntax match-type?
+  (syntax-rules ()
+    ((match-type? id token-type) (eq? (quote id) token-type))))
+
+;;; Match an ID against a token
+(define-syntax match-token?
+  (syntax-rules ()
+    ((match-token? id token) (eq? (quote id) (car token)))))
+
 ;; desig = . ID | [ expr ]
 (define (match-desig lexer token)
   (parse-trace "match-desig" token)
   (cond
-   ((eq? 'DOT (car token))
+   ((match-token? DOT token)
     (let ((t (get-token lexer)))
-      (if (eq? 'ID (car t))
+      (if (match-token? ID t)
           (list 'FIELD t)
           (parse-error t "Bad field"))))
-   ((eq? 'OPENSQ (car token))
+   ((match-token? OPENSQ token)
     (let ((e (match-expr lexer (get-token lexer))))
-      (if (and e (eq? 'CLOSESQ (car (get-token lexer))))
+      (if (and e (match-token? CLOSESQ (get-token lexer)))
           (list 'INDEX e)
           (parse-error token "Expected ]"))))
    (else 
@@ -123,14 +138,14 @@
 ;; location = ID {desig}
 (define (match-location lexer token)
   (parse-trace "match-location" token)
-  (if (eq? 'ID (car token))
+  (if (match-token? ID token)
       (let loop ((d (match-desig lexer (get-token lexer))) (des token))
         (cond
          ((not d)
           des)
-         ((eq? 'FIELD (car d))
+         ((match-token? FIELD d)
           (loop (match-desig lexer (get-token lexer)) (cons (car d) (cons des (cdr d)))))
-         ((eq? 'INDEX (car d))
+         ((match-token? INDEX d)
           (loop (match-desig lexer (get-token lexer)) (cons (car d) (cons des (cdr d)))))))
       #f))
 
@@ -148,7 +163,7 @@
 ;; actual-parameters = [expr] {COMMA expr}
 (define (match-actual-parameters lexer token)
   (parse-trace "match-actual-parameters " token) 
-  (if (eq? 'CLOSE (car token))
+  (if (match-token? CLOSE token)
       (begin
         (unget-token lexer token)
         '())
@@ -156,7 +171,7 @@
         (if e
             (let loop ((t (get-token lexer)) (p (list e)))
               (cond
-               ((eq? 'COMMA (car t))
+               ((match-token? COMMA t)
                 (let ((e (match-expr lexer (get-token lexer))))
                   (if e
                       (loop (get-token lexer) (cons e p))
@@ -182,27 +197,26 @@
     (if l
         (let ((token (get-token lexer)))
           (cond
-           ((eq? 'OPEN (car token))
+           ((match-token? OPEN token)
             (let ((p (match-actual-parameters lexer (get-token lexer))))
               (if p
                   (let ((t (get-token lexer)))
-                    (if (eq? 'CLOSE (car t))
+                    (if (match-token? CLOSE t)
                         (list 'CALL l p)
                         (parse-error t "Expected )")))
                   #f)))
            (else
             (unget-token lexer token)
             l)))
-        (let ((token-type (car token)))
-          (cond
-           ((eq? 'INT token-type) token)
-           ((eq? 'STRING token-type) token)
-           ((eq? 'OPEN (car token))
+        (cond
+         ((match-token? INT token) token)
+         ((match-token? STRING token) token)
+         ((match-token? OPEN token)
             (let ((t (match-expr lexer (get-token lexer))))
-              (if (and t (eq? 'CLOSE (car (get-token lexer))))
+              (if (and t (match-token? CLOSE (get-token lexer)))
                   t
                   (parse-error token "Expected )"))))
-           (else (parse-error token "Expected ID or INTEGER")))))))
+         (else (parse-error token "Expected ID or INTEGER"))))))
 
 (define (test-match-primary)
   (test-run "match-primary" match-primary
@@ -221,14 +235,13 @@
 ;; unary = primary | MINUS primary
 (define (match-unary lexer token)
   (parse-trace "match-unary " token) 
-  (let ((token-type (car token)))
-    (cond
-     ((or (eq? 'MINUS token-type)
-          (eq? 'NOT token-type))
-      (let ((p (match-primary lexer (get-token lexer))))
-        (if p (list token-type p)
-            #f)))
-     (else (match-primary lexer token)))))
+  (cond
+   ((or (match-token? MINUS token)
+        (match-token? NOT token))
+    (let ((p (match-primary lexer (get-token lexer))))
+      (if p (list (car token) p)
+          #f)))
+   (else (match-primary lexer token))))
 
 (define (test-match-unary)
   (test-run "match-unary" match-unary
@@ -244,16 +257,15 @@
   (parse-trace "match-factor " token) 
   (let ((u (match-unary lexer token)))
     (if u
-        (let* ((op-token (get-token lexer))
-               (token-type (car op-token)))
+        (let ((op-token (get-token lexer)))
           (cond
-           ((or (eq? 'MUL token-type)
-                (eq? 'DIV token-type)
-                (eq? 'MOD token-type)
-                (eq? 'AND token-type))
+           ((or (match-token? MUL op-token)
+                (match-token? DIV op-token)
+                (match-token? MOD op-token)
+                (match-token? AND op-token))
             (let ((f (match-factor lexer (get-token lexer))))
               (if f
-                  (list token-type u f)
+                  (list (car op-token) u f)
                   (parse-error token "Missing factor after * or /"))))
            (else
             (unget-token lexer op-token)
@@ -278,14 +290,14 @@
   (let ((f (match-factor lexer token)))
     (if f
         (let* ((op-token (get-token lexer))
-               (token-type (car op-token)))
+               (token-type (get-token-type op-token)))
           (cond
-           ((or (eq? 'PLUS token-type)
-                (eq? 'MINUS token-type)
-                (eq? 'OR token-type))
+           ((or (match-type? PLUS token-type)
+                (match-type? MINUS token-type)
+                (match-type? OR token-type))
             (let ((op (cond
-                       ((eq? 'PLUS token-type) 'ADD)
-                       ((eq? 'MINUS token-type) 'SUB)
+                       ((match-type? PLUS token-type) 'ADD)
+                       ((match-type? MINUS token-type) 'SUB)
                        (else token-type)))
                   (t (match-term lexer (get-token lexer))))
               (if t
@@ -322,14 +334,14 @@
   (let ((t (match-term lexer token)))
     (if t
         (let* ((op-token (get-token lexer))
-               (token-type (car op-token)))
+               (token-type (get-token-type op-token)))
           (cond
-           ((or (eq? 'EQ token-type)
-                (eq? 'NE token-type)
-                (eq? 'LE token-type)
-                (eq? 'LT token-type)
-                (eq? 'GE token-type)
-                (eq? 'GT token-type))
+           ((or (match-type? EQ token-type)
+                (match-type? NE token-type)
+                (match-type? LE token-type)
+                (match-type? LT token-type)
+                (match-type? GE token-type)
+                (match-type? GT token-type))
             (let ((e (match-expr lexer (get-token lexer))))
               (if e
                   (list token-type t e)
@@ -378,7 +390,7 @@
 ;;; Match optional else clause.  Return '() if no else clause, #f if error
 (define (match-else lexer token)
   (parse-trace "match-else" token)
-  (if (eq? 'ELSE (car token))
+  (if (match-token? ELSE token)
       (let ((s (match-statement-list lexer (get-token lexer))))
         (if s
             (list 'ELSE s)
@@ -392,11 +404,11 @@
   (parse-trace "match-elseif" token)
   (let loop ((t token) (eif '()))
     ;;(display "loop ") (write t) (newline)
-    (if (eq? 'ELSEIF (car t))
+    (if (match-token? ELSEIF t)
         (let ((e (match-expr lexer (get-token lexer))))
           (if e
               (let ((t (get-token lexer)))
-                (if (eq? 'THEN (car t))
+                (if (match-token? THEN t)
                     (let ((s (match-statement-list lexer (get-token lexer))))
                       (if s
                           (loop (get-token lexer) (cons (cons e s) eif))
@@ -410,11 +422,11 @@
 ;;; if-statement = IF expr THEN statement-list {ELSEIF expr THEN statement-list} [ELSE statement-list] END
 (define (match-if-statement lexer token)
   (parse-trace "match-if-statement" token)
-  (if (eq? 'IF (car token))
+  (if (match-token? IF token)
       (let ((e (match-expr lexer (get-token lexer))))
         (if e
             (let ((t (get-token lexer)))
-              (if (eq? 'THEN (car t))
+              (if (match-token? THEN t)
                   (let ((s (match-statement-list lexer (get-token lexer))))
                     (if s
                         (let ((elseif (match-elseif lexer (get-token lexer))))
@@ -422,7 +434,7 @@
                               (let ((els (match-else lexer (get-token lexer))))
                                 (if els
                                     (let ((t (get-token lexer)))
-                                      (if (eq? 'END (car t))
+                                      (if (match-token? END t)
                                           (if (null? elseif)
                                               (if (null? els)
                                                   (list 'COND (cons e s))
@@ -477,15 +489,15 @@
 ;;; while-statement = WHILE expr DO statements END
 (define (match-while-do lexer token)
   (parse-trace "match-while-do" token)
-  (if (eq? 'WHILE (car token))
+  (if (match-token? WHILE token)
       (let ((e (match-expr lexer (get-token lexer))))
         (if e
             (let ((t (get-token lexer)))
-              (if (eq? 'DO (car t))
+              (if (match-token? DO t)
                   (let ((s (match-statement-list lexer (get-token lexer))))
                     (if s
                         (let ((t (get-token lexer)))
-                          (if (eq? 'END (car t))
+                          (if (match-token? END t)
                               (list 'WHILE e s)
                               (parse-error t "Expected END in WHILE")))
                         #f))
@@ -507,11 +519,11 @@
 ;;; repeat-statement = REPEAT statements UNTIL expr
 (define (match-repeat-until lexer token)
   (parse-trace "match-repeat-until" token)
-  (if (eq? 'REPEAT (car token))
+  (if (match-token? REPEAT token)
       (let ((s (match-statement-list lexer (get-token lexer))))
         (if s
             (let ((t (get-token lexer)))
-              (if (eq? 'UNTIL (car t))
+              (if (match-token? UNTIL t)
                   (let ((e (match-expr lexer (get-token lexer))))
                     (if e
                         (list 'REPEAT s e)
@@ -539,16 +551,16 @@
     (if l
         (let ((t (get-token lexer)))
           (cond
-           ((eq? 'ASSIGN (car t))
+           ((match-token? ASSIGN t)
             (let ((e (match-expr lexer (get-token lexer))))
               (if e
                   (list 'ASSIGN l e)
                   #f)))
-           ((eq? 'OPEN (car t))
+           ((match-token? OPEN t)
             (let ((p (match-actual-parameters lexer (get-token lexer))))
               (if p
                   (let ((t (get-token lexer)))
-                    (if (eq? 'CLOSE (car t))
+                    (if (match-token? CLOSE t)
                         (list 'CALL l p)
                         (parse-error t "Expected )")))
                   #f)))
@@ -606,7 +618,7 @@
   (let ((s (match-statement lexer token)))
     (if s
         (let loop ((stats (list s)) (token (get-token lexer)))
-          (if (eq? 'SEMICOLON (car token))
+          (if (match-token? SEMICOLON token)
               (let ((s (match-statement lexer (get-token lexer))))
                 (if s
                     (loop (cons s stats) (get-token lexer))
@@ -645,11 +657,11 @@
 ;;; id-list = ID {"," ID}.
 (define (match-id-list lexer token)
   (parse-trace "match-id-list" token)
-  (if (eq? 'ID (car token))
+  (if (match-token? ID token)
       (let loop ((t (get-token lexer)) (id-list (list token)))
-        (if (eq? 'COMMA (car t))
+        (if (match-token? COMMA t)
             (let ((id (get-token lexer)))
-              (if (eq? 'ID (car id))
+              (if (match-token? ID id)
                   (loop (get-token lexer) (cons id id-list))
                   (parse-error id "Expected ID")))
             (begin
@@ -666,7 +678,7 @@
 ;;; type = ID | array-type | record-type.
 (define (match-type lexer token)
   (parse-trace "match-type" token)
-  (if (eq? 'ID (car token))
+  (if (match-token? ID token)
       (cons 'TYPE (cdr token))
       (let ((array (match-array-type lexer token)))
         (if array
@@ -686,11 +698,11 @@
 ;;; array-type = ARRAY expr OF type.
 (define (match-array-type lexer token)
   (parse-trace "match-array-type" token)
-  (if (eq? 'ARRAY (car token))
+  (if (match-token? ARRAY token)
       (let ((e (match-expr lexer (get-token lexer))))
         (if e
             (let ((t (get-token lexer)))
-              (if (eq? 'OF (car t))
+              (if (match-token? OF t)
                   (let ((type (match-type lexer (get-token lexer))))
                     (if type
                         (list 'ARRAY type e)
@@ -705,7 +717,7 @@
   (let ((ids (match-id-list lexer token)))
     (if ids
         (let ((t (get-token lexer)))
-          (if (eq? 'COLON (car t))
+          (if (match-token? COLON t)
               (let ((type (match-type lexer (get-token lexer))))
                 (if type
                     (list 'FIELDS type ids)
@@ -722,16 +734,16 @@
 ;;; record-type = RECORD field-list {SEMICOLON field-list} END.
 (define (match-record-type lexer token)
   (parse-trace "match-record-type" token)
-  (if (eq? 'RECORD (car token))
+  (if (match-token? RECORD token)
       (let ((fields (match-field-list lexer (get-token lexer))))
         (if fields
             (let loop ((t (get-token lexer)) (flist (list fields)))
-              (if (eq? 'SEMICOLON (car t))
+              (if (match-token? SEMICOLON t)
                   (let ((f (match-field-list lexer (get-token lexer))))
                     (if f
                         (loop (get-token lexer) (cons f flist))
                         #f))
-                  (if (eq? 'END (car t))
+                  (if (match-token? END t)
                       (list 'RECORD (reverse flist))
                       (parse-error t "expected END"))))
             #f))
@@ -757,17 +769,17 @@
 ;;; var-declaration = VAR {ident-list COLON type SEMICOLON}
 (define (match-var-declaration lexer token)
   (parse-trace "match-var-declaration" token)
-  (if (eq? 'VAR (car token))
+  (if (match-token? VAR token)
       (let loop ((idt (get-token lexer)) (vars '()))
         ;(display "var loop ") (write idt) (newline) (write vars) (newline)
         (let ((ids (match-id-list lexer idt)))
           (if ids
               (let ((t (get-token lexer)))
-                (if (eq? 'COLON (car t))
+                (if (match-token? COLON t)
                     (let ((type (match-type lexer (get-token lexer))))
                       (if type
                           (let ((ts (get-token lexer)))
-                            (if (eq? 'SEMICOLON (car ts))
+                            (if (match-token? SEMICOLON ts)
                                 (loop (get-token lexer) (cons (list type ids) vars))
                                 (parse-error ts "Expected ;")))
                           #f))
@@ -797,15 +809,15 @@
 ;;; type-declaration = [TYPE {ID EQ type SEMICOLON}]
 (define (match-type-declaration lexer token)
   (parse-trace "match-type-declaration" token)
-  (if (eq? 'TYPE (car token))
+  (if (match-token? TYPE token)
       (let loop ((id (get-token lexer)) (tlist '()))
-        (if (eq? 'ID (car id))
+        (if (match-token? ID id)
             (let ((eq (get-token lexer)))
-              (if (eq? 'EQ (car eq))
+              (if (match-token? EQ eq)
                   (let ((type (match-type lexer (get-token lexer))))
                     (if type
                         (let ((sc (get-token lexer)))
-                          (if (eq? 'SEMICOLON (car sc))
+                          (if (match-token? SEMICOLON sc)
                               (loop (get-token lexer) (cons (list id type) tlist))
                               (parse-error sc "Expected ;")))
                         #f))
@@ -830,15 +842,15 @@
 ;;; const-declaration = CONST {ID EQ expr SEMICOLON}
 (define (match-const-declaration lexer token)
   (parse-trace "match-const-declaration" token)
-  (if (eq? 'CONST (car token))
+  (if (match-token? CONST token)
       (let loop ((id (get-token lexer)) (clist '()))
-        (if (eq? 'ID (car id))
+        (if (match-token? ID id)
             (let ((eq (get-token lexer)))
-              (if (eq? 'EQ (car eq))
+              (if (match-token? EQ eq)
                   (let ((expr (match-expr lexer (get-token lexer))))
                     (if expr
                         (let ((sc (get-token lexer)))
-                          (if (eq? 'SEMICOLON (car sc))
+                          (if (match-token? SEMICOLON sc)
                               (loop (get-token lexer) (cons (list id expr) clist))
                               (parse-error sc "Expected ;")))
                         #f))
@@ -870,14 +882,14 @@
     (let ((id-list (match-id-list lexer token)))
       (if id-list
           (let ((col (get-token lexer)))
-            (if (eq? 'COLON (car col))
+            (if (match-token? COLON col)
                 (let ((type (match-type lexer (get-token lexer))))
                   (if type
                       (list type id-list)
                       #f))
                 (parse-error col "Expected :")))
           #f)))
-  (if (eq? 'VAR (car token))
+  (if (match-token? VAR token)
       (let ((fp (match-fp-section2 lexer (get-token lexer))))
         (if fp
             (cons 'VAR fp)
@@ -894,17 +906,17 @@
 ;;; formal-parameters = OPEN [fp-section {SEMICOLON fp-section}] CLOSE
 (define (match-formal-parameters lexer token)
   (parse-trace "match-formal-parameters" token)
-  (if (eq? 'OPEN (car token))
+  (if (match-token? OPEN token)
       (let loop ((t (get-token lexer)) (fp-list '()))
         (let ((fp-sect (match-fp-section lexer t)))
           (if fp-sect
               (let ((sc (get-token lexer)))
-                (if (eq? 'SEMICOLON (car sc))
+                (if (match-token? SEMICOLON sc)
                     (loop (get-token lexer) (cons fp-sect fp-list))
-                    (if (eq? 'CLOSE (car sc))
+                    (if (match-token? CLOSE sc)
                         (reverse (cons fp-sect fp-list))
                         (parse-error "Expected )" sc))))
-              (if (eq? 'CLOSE (car t))
+              (if (match-token? CLOSE t)
                   (reverse fp-list)
                   (parse-error t "Expected )")))))
       #f))
@@ -927,9 +939,9 @@
 ;;; procedure-heading = PROCEDURE ID [formal-parameters]
 (define (match-procedure-heading lexer token)
   (parse-trace "match-procedure-heading" token)
-  (if (eq? 'PROCEDURE (car token))
+  (if (match-token? PROCEDURE token)
       (let ((id (get-token lexer)))
-        (if (eq? 'ID (car id))
+        (if (match-token? ID id)
             (let ((fp (match-formal-parameters lexer (get-token lexer))))
               (if fp
                   (list 'PROCEDURE id fp)
@@ -951,25 +963,25 @@
 ;;; procedure-body = declarations [BEGIN statements] END ID
 (define (match-procedure-body lexer token)
   (parse-trace "match-procedure-body" token)
-  (let ((decl (if (eq? 'BEGIN (car token))
+  (let ((decl (if (match-token? BEGIN token)
                   (begin (unget-token lexer token) '())
-                  (if (eq? 'END (car token))
+                  (if (match-token? END token)
                       (begin (unget-token lexer token) '())
                       (match-declarations lexer token)))))
     (if decl
         (let ((t (get-token lexer)))
           ;;(display "mpb1 ") (write t) (newline)
-          (let ((stats (if (eq? 'BEGIN (car t))
+          (let ((stats (if (match-token? BEGIN t)
                            (match-statement-list lexer (get-token lexer))
                            (begin
                              (unget-token lexer t)
                              '()))))
             (let ((et (get-token lexer)))
               ;;(display "mpb2 ") (write et) (newline)
-              (if (eq? 'END (car et))
+              (if (match-token? END et)
                   (let ((it (get-token lexer)))
                     ;;(display "mpb3 ") (write it) (newline)
-                    (if (eq? 'ID (car it))
+                    (if (match-token? ID it)
                         (list it decl stats)
                         (parse-error it "Expected procedure ID")))
                   (parse-error et "Expected END")))))
@@ -1009,11 +1021,11 @@
   (let ((heading (match-procedure-heading lexer token)))
     (if heading
         (let ((t (get-token lexer)))
-          (if (eq? 'SEMICOLON (car t))
+          (if (match-token? SEMICOLON t)
               (let ((body (match-procedure-body lexer (get-token lexer))))
                 (if body
                     (let ((t (get-token lexer)))
-                      (if (eq? 'SEMICOLON (car t))
+                      (if (match-token? SEMICOLON t)
                           (cons heading body)
                           (parse-error t "Expected ;")))
                     #f))
@@ -1087,25 +1099,25 @@
 ;;; anything after the . is ignored
 (define (match-module lexer token)
   (parse-trace "match-module" token)
-  (if (eq? 'MODULE (car token))
+  (if (match-token? MODULE token)
       (let ((id (get-token lexer)))
-        (if (eq? 'ID (car id))
+        (if (match-token? ID id)
             (let ((sc (get-token lexer)))
-              (if (eq? 'SEMICOLON (car sc))
+              (if (match-token? SEMICOLON sc)
                   (let ((decl (match-declarations lexer (get-token lexer))))
                     (if decl
                         (let ((t (get-token lexer)))
-                          (let ((stats (if (eq? 'BEGIN (car t))
+                          (let ((stats (if (match-token? BEGIN t)
                                            (match-statement-list lexer (get-token lexer))
                                            (begin
                                              (unget-token lexer t)
                                              '()))))
                             (let ((et (get-token lexer)))
-                              (if (eq? 'END (car et))
+                              (if (match-token? END et)
                                   (let ((id2 (get-token lexer)))
-                                    (if (eq? 'ID (car id2))
+                                    (if (match-token? ID id2)
                                         (let ((dt (get-token lexer)))
-                                          (if (eq? 'DOT (car dt))
+                                          (if (match-token? DOT dt)
                                               (list 'MODULE id id2 decl stats)
                                               (parse-error dt "Expected .")))
                                         (parse-error id2 "Expected module ID")))
