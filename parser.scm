@@ -22,12 +22,13 @@
 ;;; 9. DONE Add type declarations
 ;;; 10. DONE Add const declarations
 ;;; 11. DONE Add Module statement
-;;; 12. Refactor?  Use macros to shorten code?  Put tests in separate file?  Partially done.
+;;; 12. DONE Refactor?  Use macros to shorten code?  Put tests in separate file?  Partially done.
 ;;; 13. Syntax doesn't allow for procedure return values.
 ;;; 14. Floating point?
 ;;; 15. DONE Parse from a file for longer tests.
 ;;; 16. IMPORT and EXPORT statements
 ;;; 17. Public markers
+;;; 18. Pointers
 
 (import (chicken format))
 
@@ -36,6 +37,10 @@
   (if (eq? 2 (length token))
       (cadr token)
       (caddr token)))
+
+; Return the value from a token (only works if it has a value)
+(define (token-value token)
+  (cadr token))
 
 (define (parse-error token msg)
   (printf "Error line ~A: ~A~N" (line-number token) msg)
@@ -611,7 +616,10 @@
                 (if body
                     (let ((t (get-token lexer)))
                       (if (match-token? SEMICOLON t)
-                          (cons heading body)
+                          (let ((id1 (token-value (cadr heading))) (id2 (token-value (car body))))
+                            (if (string=? id1 id2)
+                                (cons heading (cdr body))
+                                (parse-error (car body) (format "Procedure ID mismatch ~S/~S" id1 id2))))
                           (parse-error t "Expected ;")))
                     #f))
               (parse-error t "Expected ;")))
@@ -656,7 +664,10 @@
                                     (if (match-token? ID id2)
                                         (let ((dt (get-token lexer)))
                                           (if (match-token? DOT dt)
-                                              (list 'MODULE id id2 decl stats)
+                                              (if (string=? (token-value id) (token-value id2))
+                                                  (list 'MODULE id decl stats)
+                                                  (parse-error id2 (format "Module ID mismatch ~S/~S"
+                                                                           (token-value id) (token-value id2))))
                                               (parse-error dt "Expected .")))
                                         (parse-error id2 "Expected module ID")))
                                   (parse-error et "Expected END")))))

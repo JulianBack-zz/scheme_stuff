@@ -466,9 +466,10 @@
                ((PROCEDURE
                  (ID "add" 1)
                  (((TYPE "integer" 1) ((ID "a" 1) (ID "b" 1))) (VAR (TYPE "integer" 1) ((ID "result" 1)))))
-                (ID "add" 4)
                 ()
-                ((ASSIGN (ID "result" 3) (ADD (ID "a" 3) (ID "b" 3)))))))))
+                ((ASSIGN (ID "result" 3) (ADD (ID "a" 3) (ID "b" 3))))))
+              ("procedure add(a, b: integer; var result: integer);\nbegin\n  result := a + b\nend sub;"
+               #f))))
 
 (define (test-match-declarations)
   (test-run "match-declarations" match-declarations
@@ -511,9 +512,10 @@
   (test-run "match-module" match-module
             '(("module hello;\nbegin\n  print(\"Hello world\") end hello."
                (MODULE (ID "hello" 1)
-                       (ID "hello" 3)
                        (#f #f #f ())
-                       ((CALL (ID "print" 3) ((STRING "Hello world" 3)))))))))
+                       ((CALL (ID "print" 3) ((STRING "Hello world" 3))))))
+              ("module hello;\nbegin\n  print(\"Hello world\") end bye."
+               #f))))
 
 (define (test-all)
   (test-lexer)
